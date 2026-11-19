@@ -143,6 +143,21 @@ class AuditLog(models.Model):
         return f"{self.action} on {self.model_name}:{self.object_id}"
 
 
+class CompanySettings(models.Model):
+    name = models.CharField(max_length=255, default='')
+    gstin = models.CharField(max_length=15, default='')
+    state = models.CharField(max_length=100, default='')
+
+    class Meta:
+        verbose_name = 'Company Settings'
+        verbose_name_plural = 'Company Settings'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 def log_action(user=None, action="", model_name="", object_id=None, details=None, instance=None):
     """
     Helper function to record an AuditLog entry.

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}New Purchase{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-slate-800">New Purchase</h1>
+    <a href="{% url 'purchase_list' %}"
+       class="text-sm text-indigo-600 hover:text-indigo-800 font-medium transition">
+      ← Back to purchases
+    </a>
+  </div>
+
+  {% if errors %}
+    <div class="mb-4 space-y-1">
+      {% for err in errors %}
+        <div class="p-3 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 text-sm">{{ err }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="post" class="space-y-6">
+    {% csrf_token %}
+
+    <!-- Header -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+      <h2 class="text-lg font-semibold text-slate-700 mb-4">Purchase Details</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Supplier</label>
+          {{ header_form.supplier }}
+          {% if header_form.supplier.errors %}
+            <p class="text-rose-600 text-xs mt-1">{{ header_form.supplier.errors.0 }}</p>
+          {% endif %}
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Date</label>
+          {{ header_form.date }}
+          {% if header_form.date.errors %}
+            <p class="text-rose-600 text-xs mt-1">{{ header_form.date.errors.0 }}</p>
+          {% endif %}
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Note</label>
+          {{ header_form.note }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Line items -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+      <h2 class="text-lg font-semibold text-slate-700 mb-4">Line Items</h2>
+      {{ formset.management_form }}
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-slate-500 border-b border-slate-200">
+              <th class="pb-2 pr-3 font-medium">Item</th>
+              <th class="pb-2 pr-3 font-medium">Qty</th>
+              <th class="pb-2 pr-3 font-medium">Unit</th>
+              <th class="pb-2 font-medium">Rate (paise/unit)</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for form in formset %}
+              <tr class="py-2">
+                <td class="pr-3 py-2">{{ form.item }}</td>
+                <td class="pr-3 py-2">{{ form.qty }}</td>
+                <td class="pr-3 py-2">{{ form.purchase_unit }}</td>
+                <td class="py-2">{{ form.rate_paise }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit"
+              class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2.5 rounded-lg shadow-sm transition">
+        Save Purchase
+      </button>
+    </div>
+  </form>
+</div>
+
+<style>
+  select, input[type="text"], input[type="number"], input[type="date"], textarea {
+    @apply block w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400;
+  }
+</style>
+{% endblock %}
