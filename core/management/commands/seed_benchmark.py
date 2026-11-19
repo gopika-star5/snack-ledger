@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -6,6 +7,7 @@ from django.core.management.base import BaseCommand
 
 from core.ledger import receive_stock
 from core.models import CompanySettings, Customer, Item, StockMovement, Supplier, Unit
+from production.models import BOM, BOMLine
 
 User = get_user_model()
 
@@ -64,6 +66,39 @@ class Command(BaseCommand):
         if verbosity >= 1:
             self.stdout.write('Items ready.')
 
+        # ── Murukku BOM (idempotent) ──────────────────────────────────────────
+        bom, created = BOM.objects.get_or_create(
+            finished_item=murukku,
+            defaults={
+                'batch_yield': Decimal('200'),
+                'tolerance_percent': Decimal('3'),
+            },
+        )
+        if not created:
+            bom.batch_yield = Decimal('200')
+            bom.tolerance_percent = Decimal('3')
+            bom.save()
+
+        bom_lines = [
+            (flour, Decimal('40'), kg),
+            (oil, Decimal('10'), L),
+            (spice, Decimal('1.2'), kg),
+            (pouch, Decimal('200'), piece),
+            (carton, Decimal('10'), piece),
+        ]
+        for b_item, qty, b_unit in bom_lines:
+            BOMLine.objects.update_or_create(
+                bom=bom,
+                item=b_item,
+                defaults={
+                    'qty_per_batch': qty,
+                    'unit': b_unit,
+                },
+            )
+
+        if verbosity >= 1:
+            self.stdout.write('Murukku BOM ready.')
+
         # ── Opening stock (idempotent) ────────────────────────────────────────
         opening_items = [
             (flour,   '100', 4200,  None),
@@ -73,8 +108,6 @@ class Command(BaseCommand):
             (carton,  '30',  1500,  None),
             (murukku, '50',  3000,  date.today() + timedelta(days=60)),
         ]
-
-        from decimal import Decimal
 
         for item, qty_str, cost, expiry in opening_items:
             already = StockMovement.objects.filter(

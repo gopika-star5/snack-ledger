@@ -1,11 +1,11 @@
 from decimal import Decimal
-from datetime import date, timedelta
+from datetime import date
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from core.ledger import get_balance, receive_stock
 from core.models import Item, Unit, Supplier
-from production.models import Purchase, PurchaseLine
+from production.models import BOM, Purchase, PurchaseLine
 
 User = get_user_model()
 
@@ -38,11 +38,20 @@ class SeedBenchmarkTest(TestCase):
         murukku = Item.objects.get(name='Murukku 200 g')
         self.assertEqual(get_balance(murukku), Decimal('50'))
 
+    def test_murukku_bom_created(self):
+        murukku = Item.objects.get(name='Murukku 200 g')
+        bom = BOM.objects.get(finished_item=murukku)
+        self.assertEqual(bom.batch_yield, Decimal('200'))
+        self.assertEqual(bom.tolerance_percent, Decimal('3'))
+        self.assertEqual(bom.lines.count(), 5)
+
     def test_seed_idempotent(self):
-        # Running seed twice should not change balances
+        # Running seed twice should not change balances or duplicate BOM
         call_command('seed_benchmark', verbosity=0)
         flour = Item.objects.get(name='Flour')
         self.assertEqual(get_balance(flour), Decimal('100'))
+        murukku = Item.objects.get(name='Murukku 200 g')
+        self.assertEqual(BOM.objects.filter(finished_item=murukku).count(), 1)
 
 
 class PurchaseFlourTest(TestCase):
@@ -56,7 +65,6 @@ class PurchaseFlourTest(TestCase):
         user = User.objects.get(username='system')
         kg = Unit.objects.get(code='kg')
 
-        # Create purchase
         purchase = Purchase.objects.create(
             supplier=supplier,
             date=date.today(),
@@ -65,20 +73,18 @@ class PurchaseFlourTest(TestCase):
         qty = Decimal('60')
         unit_cost = 4500
         line_total = int(qty * unit_cost)
-        line = PurchaseLine.objects.create(
+        PurchaseLine.objects.create(
             purchase=purchase,
             item=flour,
             qty_in_purchase_unit=qty,
             purchase_unit=kg,
-            qty_in_stock_unit=qty,  # kg -> kg, no conversion needed
+            qty_in_stock_unit=qty,
             unit_cost_paise=unit_cost,
             line_total_paise=line_total,
         )
         purchase.total_paise = line_total
         purchase.save()
 
-        # Call receive_stock
-        from core.ledger import receive_stock
         receive_stock(flour, qty, unit_cost, 'purchase', str(purchase.pk), user)
 
         self.assertEqual(get_balance(flour), Decimal('160'))
