@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Production Run #{{ run.pk }} Result{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+  <!-- Top Navigation & Title -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <div class="flex items-center gap-3">
+        <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Production Run #{{ run.pk }}</h1>
+        <span class="{% if run.status == 'posted' %}bg-emerald-100 text-emerald-800 border-emerald-300{% else %}bg-amber-100 text-amber-800 border-amber-300{% endif %} border text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+          {{ run.status }}
+        </span>
+      </div>
+      <p class="text-sm text-slate-500 mt-1">Processed on {{ run.run_date }} for {{ run.bom.finished_item.name }}</p>
+    </div>
+    <div class="flex items-center space-x-3">
+      <a href="{% url 'run_list' %}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-4 py-2 rounded-lg text-sm transition">
+        ← Past Runs
+      </a>
+      <a href="{% url 'run_create' %}" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow-sm transition">
+        + New Run
+      </a>
+    </div>
+  </div>
+
+  <!-- Run Summary Cards -->
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="text-xs text-slate-400 font-medium">Batches</div>
+      <div class="text-xl font-bold text-slate-800 font-mono mt-1">{{ run.batches }}</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">batch size</div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="text-xs text-slate-400 font-medium">Good Output</div>
+      <div class="text-xl font-bold text-indigo-600 font-mono mt-1">{{ run.actual_good_output }}</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">packets</div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="text-xs text-slate-400 font-medium">Damaged Pouches</div>
+      <div class="text-xl font-bold text-slate-700 font-mono mt-1">{{ run.damaged_pouches }}</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">pieces</div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="text-xs text-slate-400 font-medium">Cartons Used</div>
+      <div class="text-xl font-bold text-slate-700 font-mono mt-1">{{ run.cartons_used }}</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">boxes</div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="text-xs text-slate-400 font-medium">Material Cost</div>
+      <div class="text-xl font-bold text-slate-800 font-mono mt-1">₹{{ material_cost_rupees }}</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">{{ run.material_cost_paise }} paise</div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="text-xs text-slate-400 font-medium">Cost / Packet</div>
+      <div class="text-xl font-bold text-slate-800 font-mono mt-1">₹{{ unit_cost_rupees }}</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">{{ run.unit_cost_paise|default:"0" }} paise</div>
+    </div>
+  </div>
+
+  <!-- Variance Analysis Table -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div>
+        <h2 class="text-lg font-bold text-slate-800">Consumption & Yield Variance Analysis</h2>
+        <p class="text-xs text-slate-500 mt-0.5">
+          Planned vs actual usage with tolerance thresholds (&plusmn;{{ run.bom.tolerance_percent }}%).
+        </p>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="inline-flex items-center gap-1 text-rose-700 font-medium">
+          <span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Flagged (Adverse)
+        </span>
+        <span class="inline-flex items-center gap-1 text-emerald-700 font-medium ml-3">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Favourable
+        </span>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr class="text-left text-slate-600 font-medium text-xs uppercase tracking-wider">
+            <th class="px-5 py-3">Item</th>
+            <th class="px-5 py-3 text-right">Planned</th>
+            <th class="px-5 py-3 text-right">Actual</th>
+            <th class="px-5 py-3 text-right">Variance %</th>
+            <th class="px-5 py-3 text-center">Status Badge</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for line in variance_lines %}
+          <tr class="{{ line.row_class }} transition">
+            <td class="px-5 py-3.5 font-medium">
+              {{ line.item.name }}
+            </td>
+            <td class="px-5 py-3.5 text-right font-mono text-xs">
+              {{ line.planned_qty }} {{ line.item.stock_unit.code }}
+            </td>
+            <td class="px-5 py-3.5 text-right font-mono text-xs">
+              {{ line.actual_qty }} {{ line.item.stock_unit.code }}
+            </td>
+            <td class="px-5 py-3.5 text-right font-mono font-semibold">
+              {% if line.variance_percent > 0 %}+{% endif %}{{ line.variance_percent }}%
+            </td>
+            <td class="px-5 py-3.5 text-center">
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border {{ line.badge_class }}">
+                {{ line.badge_text }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+
+          <!-- Yield Variance Row -->
+          <tr class="{{ yield_row_class }} border-t-2 border-slate-300 transition">
+            <td class="px-5 py-4 font-bold flex items-center gap-2">
+              <span>🌾</span>
+              <span>Yield ({{ run.bom.finished_item.name }})</span>
+            </td>
+            <td class="px-5 py-4 text-right font-mono font-semibold text-xs">
+              {{ expected_yield }} packets
+            </td>
+            <td class="px-5 py-4 text-right font-mono font-semibold text-xs">
+              {{ run.actual_good_output }} packets
+            </td>
+            <td class="px-5 py-4 text-right font-mono font-bold">
+              {% if run.yield_variance_percent > 0 %}+{% endif %}{{ run.yield_variance_percent }}%
+            </td>
+            <td class="px-5 py-4 text-center">
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border {{ yield_badge_class }}">
+                {{ yield_badge_text }}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Footer Actions -->
+  <div class="flex items-center justify-between pt-2">
+    <a href="{% url 'production_home' %}" class="text-sm font-medium text-slate-600 hover:text-slate-800 transition">
+      ← Back to Production Desk
+    </a>
+    <div class="space-x-3">
+      <a href="{% url 'run_list' %}" class="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition">
+        View All Runs
+      </a>
+      <a href="{% url 'run_create' %}" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2.5 rounded-xl shadow-sm transition text-sm">
+        + Start Another Run
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

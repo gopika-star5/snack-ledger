@@ -21,31 +21,40 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
-            <div class="text-2xl mb-2">🥣</div>
-            <h2 class="font-bold text-slate-800 text-base mb-1">Issue Raw Materials</h2>
-            <p class="text-slate-600 text-xs mb-4">Issue flour, oil, spices, and packaging per standard Bill of Materials (BOM) specifications.</p>
-            <button class="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-2 rounded-lg text-xs transition">
-                Start Production Run
-            </button>
+        <!-- New Production Run Card -->
+        <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow transition flex flex-col justify-between">
+            <div>
+                <div class="text-3xl mb-2">🚀</div>
+                <h2 class="font-bold text-slate-800 text-base mb-1">New Production Run</h2>
+                <p class="text-slate-600 text-xs mb-4">Start a Murukku production run from BOM recipe, record raw material issues, and log actual output.</p>
+            </div>
+            <a href="{% url 'run_create' %}" class="block text-center w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2.5 rounded-lg text-xs md:text-sm shadow-sm transition">
+                + New Production Run
+            </a>
         </div>
 
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
-            <div class="text-2xl mb-2">⚖️</div>
-            <h2 class="font-bold text-slate-800 text-base mb-1">Log Actual Output & Scrap</h2>
-            <p class="text-slate-600 text-xs mb-4">Record finished good packets, damaged pouches, and scrap. Compare planned vs actual yield.</p>
-            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
-                Log Output
-            </button>
+        <!-- Past Production Runs Card -->
+        <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow transition flex flex-col justify-between">
+            <div>
+                <div class="text-3xl mb-2">📋</div>
+                <h2 class="font-bold text-slate-800 text-base mb-1">Past Production Runs</h2>
+                <p class="text-slate-600 text-xs mb-4">Review historical batch runs, consumption variances, finished good outputs, and yield percentages.</p>
+            </div>
+            <a href="{% url 'run_list' %}" class="block text-center w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2.5 rounded-lg text-xs md:text-sm shadow-sm transition">
+                View Past Runs
+            </a>
         </div>
 
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
-            <div class="text-2xl mb-2">📦</div>
-            <h2 class="font-bold text-slate-800 text-base mb-1">Floor Stock Balance</h2>
-            <p class="text-slate-600 text-xs mb-4">View raw ingredient stocks and verify available stock before initiating next batch.</p>
-            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
-                Raw Stock Ledger
-            </button>
+        <!-- Raw Material Purchases Card -->
+        <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow transition flex flex-col justify-between">
+            <div>
+                <div class="text-3xl mb-2">📦</div>
+                <h2 class="font-bold text-slate-800 text-base mb-1">Purchases & Stock</h2>
+                <p class="text-slate-600 text-xs mb-4">Log ingredient receipts from suppliers and verify available stock before initiating production.</p>
+            </div>
+            <a href="{% url 'purchase_list' %}" class="block text-center w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 rounded-lg text-xs md:text-sm shadow-sm transition">
+                Manage Purchases
+            </a>
         </div>
     </div>
 </div>

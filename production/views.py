@@ -1,18 +1,21 @@
+from datetime import datetime
 from decimal import Decimal
 from functools import wraps
 
 from django import forms
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
-from django.shortcuts import redirect, render
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from core.decorators import role_required
-from core.ledger import receive_stock
+from core.ledger import InsufficientStock, receive_stock
 from core.models import Item, Supplier, Unit
 from core.units import convert
 
-from .models import Purchase, PurchaseLine
+from .models import BOM, BOMLine, ProductionRun, Purchase, PurchaseLine, RunIssue, RunVarianceLine
+from .services import post_run
 
 
 # ── Access control ────────────────────────────────────────────────────────────
@@ -21,7 +24,7 @@ def admin_or_production_required(view_func):
     @login_required
     @wraps(view_func)
     def _wrapped_view(request, *args, **kwargs):
-        if request.user.groups.filter(name__in=['admin', 'production']).exists():
+        if request.user.is_superuser or request.user.groups.filter(name__in=['admin', 'production']).exists():
             return view_func(request, *args, **kwargs)
         raise PermissionDenied("Access forbidden.")
     return _wrapped_view
@@ -170,3 +173,215 @@ def purchase_create(request):
         'formset': formset,
         'errors': [],
     })
+
+
+# ── Production Run Views ──────────────────────────────────────────────────────
+
+@admin_or_production_required
+def run_list(request):
+    """Run list page showing past production runs with status."""
+    runs = ProductionRun.objects.select_related('bom__finished_item', 'created_by').order_by('-run_date', '-id')
+    return render(request, 'production/run_list.html', {'runs': runs})
+
+
+@admin_or_production_required
+def run_create(request):
+    """
+    New Run page: shows the Murukku BOM, pre-fills issued quantities from the recipe,
+    and has fields for batches, actual good output, damaged pouches, cartons used and run date.
+    A Post button calls post_run and redirects to the result page.
+    """
+    murukku_bom = (
+        BOM.objects.filter(finished_item__name__icontains='Murukku')
+        .prefetch_related('lines__item__stock_unit', 'lines__unit')
+        .first()
+    )
+    if not murukku_bom:
+        murukku_bom = BOM.objects.prefetch_related('lines__item__stock_unit', 'lines__unit').first()
+
+    pouch_line = None
+    carton_line = None
+    if murukku_bom:
+        for line in murukku_bom.lines.select_related('item').all():
+            name_lower = line.item.name.lower()
+            if 'pouch' in name_lower:
+                pouch_line = line
+            elif 'carton' in name_lower:
+                carton_line = line
+
+        if not pouch_line:
+            for line in murukku_bom.lines.select_related('item').all():
+                if line.item.item_type == 'packaging' and line != carton_line:
+                    pouch_line = line
+                    break
+
+        raw_lines = [
+            line for line in murukku_bom.lines.select_related('item', 'unit').all()
+            if line != pouch_line and line != carton_line
+        ]
+    else:
+        raw_lines = []
+
+    errors = []
+    if request.method == 'POST':
+        if not murukku_bom:
+            errors.append("No Murukku BOM found in the system.")
+        else:
+            try:
+                batches_val = request.POST.get('batches', '1').strip()
+                batches = Decimal(batches_val) if batches_val else Decimal('1')
+                if batches <= Decimal('0'):
+                    raise ValueError("Batches must be greater than zero.")
+
+                run_date_val = request.POST.get('run_date', '').strip()
+                if run_date_val:
+                    try:
+                        run_date = datetime.strptime(run_date_val, '%Y-%m-%d').date()
+                    except ValueError:
+                        run_date = timezone.localdate()
+                else:
+                    run_date = timezone.localdate()
+
+                actual_good_output_val = request.POST.get('actual_good_output', '0').strip()
+                actual_good_output = Decimal(actual_good_output_val) if actual_good_output_val else Decimal('0')
+
+                damaged_pouches_val = request.POST.get('damaged_pouches', '0').strip()
+                damaged_pouches = Decimal(damaged_pouches_val) if damaged_pouches_val else Decimal('0')
+
+                cartons_used_val = request.POST.get('cartons_used', '0').strip()
+                cartons_used = Decimal(cartons_used_val) if cartons_used_val else Decimal('0')
+
+                # Create production run and raw material issues in an atomic transaction
+                with transaction.atomic():
+                    run = ProductionRun.objects.create(
+                        bom=murukku_bom,
+                        batches=batches,
+                        run_date=run_date,
+                        actual_good_output=actual_good_output,
+                        damaged_pouches=damaged_pouches,
+                        cartons_used=cartons_used,
+                        created_by=request.user,
+                        status='draft',
+                    )
+
+                    for line in raw_lines:
+                        # Find issued quantity in post data
+                        key_id = f'issue_{line.item.id}'
+                        key_name = f'issue_{line.item.name.lower().replace(" ", "_")}'
+                        val = request.POST.get(key_id)
+                        if val is None:
+                            val = request.POST.get(key_name)
+                        if val is None:
+                            val = request.POST.get(str(line.item.id))
+                        if val is not None and str(val).strip() != '':
+                            issued_qty = Decimal(str(val).strip())
+                        else:
+                            issued_qty = line.qty_per_batch * batches
+
+                        RunIssue.objects.create(
+                            run=run,
+                            item=line.item,
+                            issued_qty=issued_qty,
+                        )
+
+                    # Post run
+                    post_run(run, request.user)
+
+                return redirect('run_result', pk=run.pk)
+            except (ValidationError, InsufficientStock, ValueError) as e:
+                errors.append(str(e))
+            except Exception as e:
+                errors.append(f"An unexpected error occurred: {e}")
+
+    context = {
+        'bom': murukku_bom,
+        'raw_lines': raw_lines,
+        'pouch_line': pouch_line,
+        'carton_line': carton_line,
+        'default_date': timezone.localdate().isoformat(),
+        'errors': errors,
+    }
+    return render(request, 'production/run_form.html', context)
+
+
+@admin_or_production_required
+def run_result(request, pk):
+    """
+    Run result page: summary and a variance table (item, planned, actual, variance %, status badge).
+    Flagged rows are red; favourable variances are green. Show the yield variance row.
+    """
+    run = get_object_or_404(
+        ProductionRun.objects.select_related('bom__finished_item__stock_unit', 'created_by')
+        .prefetch_related('variance_lines__item__stock_unit'),
+        pk=pk,
+    )
+
+    expected_yield = run.bom.batch_yield * run.batches
+    material_cost_rupees = f"{(run.material_cost_paise or 0) / 100:.2f}"
+    unit_cost_rupees = f"{(run.unit_cost_paise or 0) / 100:.2f}"
+
+    variance_lines = []
+    for vl in run.variance_lines.all():
+        if vl.flagged and vl.direction == 'adverse':
+            row_type = 'flagged'
+            badge_text = 'Flagged'
+            badge_class = 'bg-rose-100 text-rose-800 border-rose-300'
+            row_class = 'bg-rose-50 text-rose-900 font-medium'
+        elif vl.direction == 'favourable' and vl.variance_qty < 0:
+            row_type = 'favourable'
+            badge_text = 'Favourable'
+            badge_class = 'bg-emerald-100 text-emerald-800 border-emerald-300'
+            row_class = 'bg-emerald-50 text-emerald-900 font-medium'
+        elif vl.flagged:
+            row_type = 'flagged'
+            badge_text = 'Flagged'
+            badge_class = 'bg-rose-100 text-rose-800 border-rose-300'
+            row_class = 'bg-rose-50 text-rose-900 font-medium'
+        else:
+            row_type = 'normal'
+            badge_text = 'OK'
+            badge_class = 'bg-slate-100 text-slate-700 border-slate-300'
+            row_class = 'bg-white text-slate-700'
+
+        variance_lines.append({
+            'item': vl.item,
+            'planned_qty': vl.planned_qty,
+            'actual_qty': vl.actual_qty,
+            'variance_qty': vl.variance_qty,
+            'variance_percent': vl.variance_percent,
+            'flagged': vl.flagged,
+            'direction': vl.direction,
+            'row_class': row_class,
+            'badge_class': badge_class,
+            'badge_text': badge_text,
+            'row_type': row_type,
+        })
+
+    # Yield variance row details
+    yield_row_class = (
+        'bg-rose-50 text-rose-900 font-bold'
+        if run.yield_flagged
+        else ('bg-emerald-50 text-emerald-900 font-bold' if (run.yield_variance_percent or 0) >= 0 else 'bg-white text-slate-700 font-bold')
+    )
+    yield_badge_class = (
+        'bg-rose-100 text-rose-800 border-rose-300'
+        if run.yield_flagged
+        else ('bg-emerald-100 text-emerald-800 border-emerald-300' if (run.yield_variance_percent or 0) >= 0 else 'bg-slate-100 text-slate-700 border-slate-300')
+    )
+    yield_badge_text = (
+        'Flagged'
+        if run.yield_flagged
+        else ('Favourable' if (run.yield_variance_percent or 0) >= 0 else 'OK')
+    )
+
+    context = {
+        'run': run,
+        'expected_yield': expected_yield,
+        'material_cost_rupees': material_cost_rupees,
+        'unit_cost_rupees': unit_cost_rupees,
+        'variance_lines': variance_lines,
+        'yield_row_class': yield_row_class,
+        'yield_badge_class': yield_badge_class,
+        'yield_badge_text': yield_badge_text,
+    }
+    return render(request, 'production/run_result.html', context)

@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}New Production Run{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-bold text-slate-800">New Production Run</h1>
+      <p class="text-sm text-slate-500 mt-1">Start a production batch from BOM recipe, record issues and log output.</p>
+    </div>
+    <div class="flex items-center space-x-3">
+      <a href="{% url 'run_list' %}" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium transition">
+        ← Past Runs
+      </a>
+      <a href="{% url 'production_home' %}" class="text-sm text-slate-500 hover:text-slate-700 transition">
+        Home
+      </a>
+    </div>
+  </div>
+
+  {% if errors %}
+    <div class="space-y-1">
+      {% for err in errors %}
+        <div class="p-3 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-sm font-medium">
+          ⚠️ {{ err }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <!-- BOM Reference Card -->
+  {% if bom %}
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-2">
+      <div>
+        <span class="text-xs uppercase tracking-wider font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">
+          Bill of Materials (BOM)
+        </span>
+        <h2 class="text-lg font-bold text-slate-800 mt-2">{{ bom.finished_item.name }}</h2>
+      </div>
+      <div class="text-xs sm:text-sm text-slate-600 flex gap-4">
+        <div><span class="text-slate-400">Standard Yield:</span> <strong class="text-slate-800 font-mono">{{ bom.batch_yield }} packets / batch</strong></div>
+        <div><span class="text-slate-400">Tolerance:</span> <strong class="text-slate-800 font-mono">&plusmn;{{ bom.tolerance_percent }}%</strong></div>
+      </div>
+    </div>
+
+    <div class="mt-4 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-slate-500 border-b border-slate-100 text-xs uppercase tracking-wider">
+            <th class="pb-2 font-medium">Ingredient / Item</th>
+            <th class="pb-2 font-medium">Type</th>
+            <th class="pb-2 text-right font-medium">Standard Qty / Batch</th>
+            <th class="pb-2 text-right font-medium">Stock Unit</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+          {% for line in bom.lines.all %}
+          <tr class="hover:bg-slate-50 transition">
+            <td class="py-2 font-medium text-slate-800">{{ line.item.name }}</td>
+            <td class="py-2 text-slate-500 text-xs capitalize">{{ line.item.item_type }}</td>
+            <td class="py-2 text-right font-mono font-semibold text-slate-700">{{ line.qty_per_batch }}</td>
+            <td class="py-2 text-right text-slate-500 text-xs">{{ line.unit.code }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Production Form -->
+  <form method="post" class="space-y-6">
+    {% csrf_token %}
+
+    <!-- Run Parameters Card -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
+      <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+        <span>⚙️</span> Batch & Schedule
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label for="batches" class="block text-sm font-medium text-slate-700 mb-1">
+            Number of Batches
+          </label>
+          <input type="number" step="0.01" min="0.01" name="batches" id="batches" value="1" required
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono">
+          <p class="text-xs text-slate-400 mt-1">Standard recipe quantities scale with batch count.</p>
+        </div>
+        <div>
+          <label for="run_date" class="block text-sm font-medium text-slate-700 mb-1">
+            Run Date
+          </label>
+          <input type="date" name="run_date" id="run_date" value="{{ default_date }}" required
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+      </div>
+    </div>
+
+    <!-- Raw Material Issued Quantities Card -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
+      <div>
+        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+          <span>🥣</span> Raw Materials Issued
+        </h2>
+        <p class="text-xs text-slate-500 mt-0.5">Pre-filled from BOM recipe. Adjust actual amounts issued if they differ.</p>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-slate-500 border-b border-slate-100 text-xs uppercase tracking-wider">
+              <th class="pb-2 font-medium">Raw Material</th>
+              <th class="pb-2 text-right font-medium">Std Qty / Batch</th>
+              <th class="pb-2 text-right font-medium">Issued Quantity</th>
+              <th class="pb-2 text-right font-medium">Unit</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for line in raw_lines %}
+            <tr>
+              <td class="py-3 font-medium text-slate-800">
+                {{ line.item.name }}
+              </td>
+              <td class="py-3 text-right font-mono text-slate-500 text-xs">
+                {{ line.qty_per_batch }}
+              </td>
+              <td class="py-3 text-right">
+                <input type="number" step="0.001" min="0" required
+                       name="issue_{{ line.item.id }}"
+                       id="issue_{{ line.item.id }}"
+                       data-std="{{ line.qty_per_batch }}"
+                       value="{{ line.qty_per_batch }}"
+                       class="raw-issue-input w-36 text-right rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              </td>
+              <td class="py-3 text-right text-slate-600 font-medium text-xs">
+                {{ line.unit.code }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Output & Packaging Usage Card -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
+      <div>
+        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+          <span>📦</span> Actual Production Output & Packaging
+        </h2>
+        <p class="text-xs text-slate-500 mt-0.5">Enter actual good packets packed, damaged pouches, and carton boxes consumed.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label for="actual_good_output" class="block text-sm font-medium text-slate-700 mb-1">
+            Actual Good Output (Packets)
+          </label>
+          <input type="number" step="0.001" min="0" name="actual_good_output" id="actual_good_output" required
+                 placeholder="e.g. 188"
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <p class="text-xs text-slate-400 mt-1">Finished packets to receive into stock.</p>
+        </div>
+
+        <div>
+          <label for="damaged_pouches" class="block text-sm font-medium text-slate-700 mb-1">
+            Damaged Pouches (Pieces)
+          </label>
+          <input type="number" step="0.001" min="0" name="damaged_pouches" id="damaged_pouches" value="0" required
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <p class="text-xs text-slate-400 mt-1">Wasted pouches during packing.</p>
+        </div>
+
+        <div>
+          <label for="cartons_used" class="block text-sm font-medium text-slate-700 mb-1">
+            Cartons Used (Pieces)
+          </label>
+          <input type="number" step="0.001" min="0" name="cartons_used" id="cartons_used" value="0" required
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <p class="text-xs text-slate-400 mt-1">Boxes used for packing.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submit Action Button -->
+    <div class="flex items-center justify-end space-x-4 pt-2">
+      <a href="{% url 'run_list' %}" class="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium text-sm hover:bg-slate-50 transition">
+        Cancel
+      </a>
+      <button type="submit"
+              class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-8 py-3 rounded-xl shadow-md hover:shadow-lg transition text-base">
+        Post Production Run
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  // Dynamically update raw material pre-fills when batches count changes
+  const batchesInput = document.getElementById('batches');
+  if (batchesInput) {
+    batchesInput.addEventListener('input', function() {
+      const factor = parseFloat(this.value) || 1;
+      document.querySelectorAll('.raw-issue-input').forEach(function(input) {
+        const std = parseFloat(input.dataset.std);
+        if (!isNaN(std)) {
+          const scaled = (std * factor);
+          input.value = Number(scaled.toFixed(3));
+        }
+      });
+    });
+  }
+</script>
+{% endblock %}
