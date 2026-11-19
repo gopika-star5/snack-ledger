@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.test import TestCase, Client
 from django.core.management import call_command
 from django.contrib.auth.models import User, Group
@@ -119,3 +120,92 @@ class RoleBasedAccessTests(TestCase):
         # Should now be unauthenticated
         res = self.client.get(self.home_urls['salesman'])
         self.assertEqual(res.status_code, 302)
+
+
+# ---------------------------------------------------------------------------
+# Unit conversion tests
+# ---------------------------------------------------------------------------
+
+class UnitConvertTests(TestCase):
+    """Tests for core.units.convert()."""
+
+    # Data migration 0002 is NOT run in test suite by default for TestCase
+    # (Django rolls back after each test class and re-applies migrations fresh).
+    # We seed the units we need directly in setUp.
+    def setUp(self):
+        from core.models import Unit
+        self.kg     = Unit.objects.get_or_create(code='kg',     defaults={'kind': 'mass',   'factor_to_base': Decimal('1000')})[0]
+        self.g      = Unit.objects.get_or_create(code='g',      defaults={'kind': 'mass',   'factor_to_base': Decimal('1')})[0]
+        self.L      = Unit.objects.get_or_create(code='L',      defaults={'kind': 'volume', 'factor_to_base': Decimal('1000')})[0]
+        self.ml     = Unit.objects.get_or_create(code='ml',     defaults={'kind': 'volume', 'factor_to_base': Decimal('1')})[0]
+        self.piece  = Unit.objects.get_or_create(code='piece',  defaults={'kind': 'count',  'factor_to_base': Decimal('1')})[0]
+        self.packet = Unit.objects.get_or_create(code='packet', defaults={'kind': 'count',  'factor_to_base': Decimal('1')})[0]
+        self.carton = Unit.objects.get_or_create(code='carton', defaults={'kind': 'count',  'factor_to_base': Decimal('20')})[0]
+
+    def test_kg_to_g(self):
+        from core.units import convert
+        result = convert(Decimal('40'), self.kg, self.g)
+        self.assertEqual(result, Decimal('40000'))
+
+    def test_L_to_ml(self):
+        from core.units import convert
+        result = convert(Decimal('10.5'), self.L, self.ml)
+        self.assertEqual(result, Decimal('10500'))
+
+    def test_carton_to_packet(self):
+        from core.units import convert
+        result = convert(Decimal('3'), self.carton, self.packet)
+        self.assertEqual(result, Decimal('60'))
+
+    def test_cross_kind_raises(self):
+        from core.units import convert
+        with self.assertRaises(ValueError):
+            convert(Decimal('1'), self.kg, self.L)
+
+
+# ---------------------------------------------------------------------------
+# StockMovement immutability tests
+# ---------------------------------------------------------------------------
+
+class StockMovementImmutabilityTests(TestCase):
+    """StockMovement rows must never be edited or deleted."""
+
+    def setUp(self):
+        from core.models import Unit, Item, StockMovement
+        self.unit = Unit.objects.create(code='g_test', kind='mass', factor_to_base=Decimal('1'))
+        self.item = Item.objects.create(
+            name='Test Item',
+            item_type='raw',
+            stock_unit=self.unit,
+            hsn_code='1234',
+            gst_rate_percent=Decimal('5.00'),
+        )
+        self.movement = StockMovement.objects.create(
+            item=self.item,
+            qty=Decimal('100.000'),
+            unit_cost_paise=4200,
+            source_type='test',
+        )
+
+    def test_edit_raises_error(self):
+        from core.models import ImmutableStockMovementError, StockMovement
+        sm = StockMovement.objects.get(pk=self.movement.pk)
+        sm.note = 'changed'
+        with self.assertRaises(ImmutableStockMovementError):
+            sm.save()
+
+    def test_delete_instance_raises_error(self):
+        from core.models import ImmutableStockMovementError, StockMovement
+        sm = StockMovement.objects.get(pk=self.movement.pk)
+        with self.assertRaises(ImmutableStockMovementError):
+            sm.delete()
+
+    def test_queryset_delete_raises_error(self):
+        from core.models import ImmutableStockMovementError, StockMovement
+        with self.assertRaises(ImmutableStockMovementError):
+            StockMovement.objects.filter(pk=self.movement.pk).delete()
+
+    def test_queryset_update_raises_error(self):
+        from core.models import ImmutableStockMovementError, StockMovement
+        with self.assertRaises(ImmutableStockMovementError):
+            StockMovement.objects.filter(pk=self.movement.pk).update(note='changed')
