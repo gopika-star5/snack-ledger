@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block title %}Production Supervisor Home{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="bg-gradient-to-r from-amber-600 to-orange-700 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <span class="bg-amber-900/60 text-amber-200 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+                    Role: Production Supervisor
+                </span>
+                <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Production Floor Desk</h1>
+                <p class="text-amber-100 text-sm mt-1">Welcome back, {{ user.username }}</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
+                <span class="text-amber-200">Floor Line:</span>
+                <span class="font-bold text-white ml-1">🏭 Batch Line 1</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+            <div class="text-2xl mb-2">🥣</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">Issue Raw Materials</h2>
+            <p class="text-slate-600 text-xs mb-4">Issue flour, oil, spices, and packaging per standard Bill of Materials (BOM) specifications.</p>
+            <button class="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-2 rounded-lg text-xs transition">
+                Start Production Run
+            </button>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+            <div class="text-2xl mb-2">⚖️</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">Log Actual Output & Scrap</h2>
+            <p class="text-slate-600 text-xs mb-4">Record finished good packets, damaged pouches, and scrap. Compare planned vs actual yield.</p>
+            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
+                Log Output
+            </button>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+            <div class="text-2xl mb-2">📦</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">Floor Stock Balance</h2>
+            <p class="text-slate-600 text-xs mb-4">View raw ingredient stocks and verify available stock before initiating next batch.</p>
+            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
+                Raw Stock Ledger
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}

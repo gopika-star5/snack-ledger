@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block title %}Factory Admin Home{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <span class="bg-blue-900/60 text-blue-200 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+                    Role: Factory Admin
+                </span>
+                <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Billing & Operations Desk</h1>
+                <p class="text-blue-100 text-sm mt-1">Welcome back, {{ user.username }}</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
+                <span class="text-blue-200">System Status:</span>
+                <span class="font-bold text-white ml-1">⚡ Factory Active</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+            <div class="text-2xl mb-2">📥</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">Incoming Field Orders</h2>
+            <p class="text-slate-600 text-xs mb-4">Verify incoming orders against finished goods inventory, edit quantities, and approve.</p>
+            <button class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-xs transition">
+                Review Orders
+            </button>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+            <div class="text-2xl mb-2">🧾</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">GST Invoicing & Dispatch</h2>
+            <p class="text-slate-600 text-xs mb-4">Generate compliant GST invoices (CGST/SGST/IGST), export PDF, and trigger stock deduction.</p>
+            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
+                Manage Invoices
+            </button>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+            <div class="text-2xl mb-2">💳</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">Collections & Receipts</h2>
+            <p class="text-slate-600 text-xs mb-4">Record payments received from retailers/distributors against outstanding tax invoices.</p>
+            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
+                Record Payment
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}

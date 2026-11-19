@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block title %}Accountant & Auditor Home{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="bg-gradient-to-r from-purple-700 to-indigo-900 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <span class="bg-purple-900/60 text-purple-200 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+                    Role: Accountant / Auditor
+                </span>
+                <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Audit & Financial Reports</h1>
+                <p class="text-purple-100 text-sm mt-1">Welcome back, {{ user.username }}</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
+                <span class="text-purple-200">Compliance:</span>
+                <span class="font-bold text-white ml-1">📑 GSTR-1 / GSTR-3B Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+            <div class="text-2xl mb-2">📑</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">Sales Register & GST</h2>
+            <p class="text-slate-600 text-xs mb-4">Export monthly outward supplies, tax breakdown (CGST/SGST/IGST), and invoice registers.</p>
+            <button class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg text-xs transition">
+                GST Reports
+            </button>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+            <div class="text-2xl mb-2">📜</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">Stock Ledger Summary</h2>
+            <p class="text-slate-600 text-xs mb-4">Complete movement-based stock ledger for raw materials, packaging, and finished goods.</p>
+            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
+                Stock Ledger
+            </button>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+            <div class="text-2xl mb-2">💰</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">Receivables & Ageing</h2>
+            <p class="text-slate-600 text-xs mb-4">Customer outstanding balances, collection reconciliations, and debt ageing analysis.</p>
+            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
+                Receivables
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}

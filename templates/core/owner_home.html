@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block title %}Owner Overview{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="bg-gradient-to-r from-slate-800 to-slate-950 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+                    Role: Factory Owner
+                </span>
+                <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Executive Overview</h1>
+                <p class="text-slate-300 text-sm mt-1">Welcome back, {{ user.username }}</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
+                <span class="text-slate-300">Operations:</span>
+                <span class="font-bold text-emerald-400 ml-1">● Healthy</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-slate-500 text-xs uppercase font-bold tracking-wider">Today's Orders</span>
+            <div class="text-2xl font-black text-slate-800 mt-2">150 pkts</div>
+            <span class="text-emerald-600 text-xs mt-1 block">Retailer A verified</span>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-slate-500 text-xs uppercase font-bold tracking-wider">Murukku Stock</span>
+            <div class="text-2xl font-black text-slate-800 mt-2">88 pkts</div>
+            <span class="text-slate-500 text-xs mt-1 block">Finished goods</span>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-slate-500 text-xs uppercase font-bold tracking-wider">Yield Variance</span>
+            <div class="text-2xl font-black text-amber-600 mt-2">-6%</div>
+            <span class="text-amber-700 text-xs mt-1 block">188 vs 200 expected</span>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-slate-500 text-xs uppercase font-bold tracking-wider">Total Receivables</span>
+            <div class="text-2xl font-black text-slate-800 mt-2">&#8377;3,875</div>
+            <span class="text-slate-500 text-xs mt-1 block">Retailer A outstanding</span>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h2 class="font-bold text-slate-800 text-base mb-2">Cost & Profitability</h2>
+            <p class="text-slate-600 text-xs mb-4">View real-time cost-per-packet breakdown factoring ingredient costs, labour, power, and packing.</p>
+            <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
+                View Costing Breakdown
+            </button>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h2 class="font-bold text-slate-800 text-base mb-2">Variance Alerts</h2>
+            <p class="text-slate-600 text-xs mb-4">Immediate notifications for ingredient consumption or batch yield exceeding the 3% tolerance threshold.</p>
+            <button class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg text-xs transition">
+                Review Alerts
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
