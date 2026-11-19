@@ -1,0 +1,331 @@
+{% extends 'base.html' %}
+
+{% block title %}New Order{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6 pb-12">
+    <!-- Breadcrumb / Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <div class="flex items-center space-x-2 text-xs text-slate-500 mb-1">
+                <a href="{% url 'sales_home' %}" class="hover:text-emerald-700">Home</a>
+                <span>&bull;</span>
+                <span class="text-slate-700 font-semibold">New Order</span>
+            </div>
+            <h1 class="text-2xl md:text-3xl font-extrabold text-slate-800">New Order</h1>
+            <p class="text-xs md:text-sm text-slate-600 mt-0.5">Select a customer, add products with quantities, and submit directly to the factory.</p>
+        </div>
+        <a href="{% url 'order_list' %}" class="text-xs md:text-sm font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3.5 py-2 rounded-xl transition">
+            📋 My Orders
+        </a>
+    </div>
+
+    {% if errors %}
+    <div class="space-y-2">
+        {% for err in errors %}
+        <div class="p-4 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-sm font-medium flex items-center space-x-2">
+            <span>⚠️</span>
+            <span>{{ err }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" id="orderForm" class="space-y-6">
+        {% csrf_token %}
+        <input type="hidden" name="client_uuid" id="clientUuidInput" value="{{ client_uuid }}">
+
+        <!-- STEP 1: Pick Customer from Searchable List -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div class="flex items-center space-x-2">
+                    <span class="w-7 h-7 bg-emerald-600 text-white rounded-full flex items-center justify-center font-bold text-sm">1</span>
+                    <h2 class="font-extrabold text-slate-800 text-base md:text-lg">Select Customer</h2>
+                </div>
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Required</span>
+            </div>
+
+            <!-- Customer Search Box -->
+            <div class="relative">
+                <input type="text"
+                       id="customerSearch"
+                       placeholder="🔍 Search retailer or distributor by name..."
+                       autocomplete="off"
+                       class="w-full text-base py-3 px-4 pl-10 rounded-xl border border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition">
+                <span class="absolute left-3.5 top-3.5 text-slate-400">🔍</span>
+            </div>
+
+            <!-- Searchable Customer Radio Cards -->
+            <div id="customerList" class="max-h-60 overflow-y-auto space-y-2 pr-1">
+                {% for c in customers %}
+                <label class="customer-card flex items-center justify-between p-3.5 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/30 cursor-pointer transition select-none group"
+                       data-search="{{ c.name|lower }} {{ c.state|lower }} {{ c.customer_type|lower }} {{ c.gstin|lower }}">
+                    <div class="flex items-center space-x-3">
+                        <input type="radio"
+                               name="customer"
+                               value="{{ c.id }}"
+                               class="w-5 h-5 text-emerald-600 accent-emerald-600 focus:ring-emerald-500"
+                               required>
+                        <div>
+                            <div class="font-bold text-slate-800 text-sm md:text-base customer-name group-hover:text-emerald-900">{{ c.name }}</div>
+                            <div class="text-xs text-slate-500">
+                                {{ c.state }}{% if c.gstin %} &bull; <span class="font-mono">GSTIN: {{ c.gstin }}</span>{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <span class="text-[11px] font-bold px-2 py-0.5 rounded-full uppercase
+                        {% if c.customer_type == 'distributor' %}bg-purple-100 text-purple-700
+                        {% else %}bg-blue-100 text-blue-700{% endif %}">
+                        {{ c.get_customer_type_display }}
+                    </span>
+                </label>
+                {% empty %}
+                <p class="text-slate-500 text-sm py-3 text-center">No customers available in the database.</p>
+                {% endfor %}
+            </div>
+            <p id="noCustomerMsg" class="hidden text-slate-500 text-sm py-2 text-center">No matching customers found.</p>
+        </div>
+
+        <!-- STEP 2: Products & Quantities -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div class="flex items-center space-x-2">
+                    <span class="w-7 h-7 bg-emerald-600 text-white rounded-full flex items-center justify-center font-bold text-sm">2</span>
+                    <h2 class="font-extrabold text-slate-800 text-base md:text-lg">Products & Quantities</h2>
+                </div>
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Prices Auto-filled</span>
+            </div>
+
+            <!-- Product Rows Container -->
+            <div id="orderLinesContainer" class="space-y-3">
+                <!-- Initial row will be injected or rendered here -->
+            </div>
+
+            <!-- Big Add Product Button -->
+            <button type="button"
+                    id="addLineBtn"
+                    class="w-full py-3.5 px-4 border-2 border-dashed border-emerald-400 bg-emerald-50/50 hover:bg-emerald-100/60 active:scale-[0.99] text-emerald-800 font-bold rounded-xl transition flex items-center justify-center space-x-2 text-sm md:text-base">
+                <span>➕</span>
+                <span>Add Another Product</span>
+            </button>
+        </div>
+
+        <!-- STEP 3: Order Note (Optional) -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-2">
+            <label class="block font-bold text-slate-700 text-sm">Order Note (Optional)</label>
+            <textarea name="note"
+                      rows="2"
+                      placeholder="Special instructions, delivery location, remarks..."
+                      class="w-full text-sm p-3 rounded-xl border border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition"></textarea>
+        </div>
+
+        <!-- STEP 4: Total & Submit Bar -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-md p-5 md:p-6 space-y-4">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div>
+                    <span class="text-xs uppercase tracking-wider text-slate-500 font-bold">Estimated Order Value</span>
+                    <div class="text-2xl md:text-3xl font-black text-slate-900 font-mono">
+                        ₹<span id="grandTotal">0.00</span>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs text-slate-500 block">Total Items: <strong id="totalItemCount" class="text-slate-800 font-mono">0</strong></span>
+                    <span class="text-xs text-slate-400 block font-mono"><span id="grandTotalPaise">0</span> paise</span>
+                </div>
+            </div>
+
+            <button type="submit"
+                    id="submitBtn"
+                    class="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-extrabold text-lg py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition flex items-center justify-center space-x-2">
+                <span>🚀</span>
+                <span>Submit Order</span>
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Template for dynamic product line -->
+<template id="lineTemplate">
+    <div class="order-line-row bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 transition">
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider line-number">Item</span>
+            <button type="button" class="remove-line-btn text-rose-600 hover:text-rose-800 text-xs font-bold py-1 px-2.5 rounded-lg hover:bg-rose-50 transition">
+                ✕ Remove
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            <!-- Product dropdown -->
+            <div class="md:col-span-6">
+                <label class="block text-xs font-bold text-slate-600 mb-1">Product</label>
+                <select name="item_id" class="item-select w-full py-3 px-3.5 text-sm md:text-base rounded-xl border border-slate-300 bg-white shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none" required>
+                    <option value="" data-price="0" data-unit="unit">-- Choose Product --</option>
+                    {% for item in items %}
+                    <option value="{{ item.id }}"
+                            data-price="{{ item.selling_price_paise|default:0 }}"
+                            data-unit="{{ item.stock_unit.code }}">
+                        {{ item.name }} (₹{{ item.selling_price_paise|default:0|stringformat:".2f" }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Quantity input -->
+            <div class="md:col-span-3">
+                <label class="block text-xs font-bold text-slate-600 mb-1">Quantity</label>
+                <input type="number"
+                       name="qty"
+                       step="1"
+                       min="1"
+                       placeholder="Qty"
+                       class="qty-input w-full py-3 px-3.5 text-sm md:text-base font-bold rounded-xl border border-slate-300 bg-white shadow-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
+                       required>
+            </div>
+
+            <!-- Pre-filled Rate & Subtotal -->
+            <div class="md:col-span-3 bg-white p-2.5 rounded-xl border border-slate-200 text-right">
+                <input type="hidden" name="price_paise" class="price-input" value="0">
+                <div class="text-[11px] text-slate-500">
+                    Rate: <strong class="price-display font-mono text-slate-700">₹0.00</strong>
+                </div>
+                <div class="text-sm md:text-base font-black text-slate-800 font-mono">
+                    ₹<span class="subtotal-display">0.00</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. Customer live search filter
+    const searchInput = document.getElementById('customerSearch');
+    const customerCards = document.querySelectorAll('.customer-card');
+    const noCustomerMsg = document.getElementById('noCustomerMsg');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            const query = this.value.trim().toLowerCase();
+            let visibleCount = 0;
+            customerCards.forEach(card => {
+                const searchData = card.getAttribute('data-search') || '';
+                if (!query || searchData.includes(query)) {
+                    card.style.display = 'flex';
+                    visibleCount++;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+            if (noCustomerMsg) {
+                noCustomerMsg.style.display = visibleCount === 0 ? 'block' : 'none';
+            }
+        });
+    }
+
+    // Highlight selected customer card
+    customerCards.forEach(card => {
+        const radio = card.querySelector('input[type="radio"]');
+        card.addEventListener('click', function() {
+            customerCards.forEach(c => c.classList.remove('border-emerald-500', 'bg-emerald-50/50', 'ring-2', 'ring-emerald-300'));
+            card.classList.add('border-emerald-500', 'bg-emerald-50/50', 'ring-2', 'ring-emerald-300');
+            if (radio) radio.checked = true;
+        });
+    });
+
+    // 2. Dynamic line items management
+    const linesContainer = document.getElementById('orderLinesContainer');
+    const lineTemplate = document.getElementById('lineTemplate');
+    const addLineBtn = document.getElementById('addLineBtn');
+    const grandTotalEl = document.getElementById('grandTotal');
+    const grandTotalPaiseEl = document.getElementById('grandTotalPaise');
+    const totalItemCountEl = document.getElementById('totalItemCount');
+
+    function calculateTotals() {
+        let grandTotalPaise = 0;
+        let totalCount = 0;
+
+        document.querySelectorAll('.order-line-row').forEach(row => {
+            const itemSelect = row.querySelector('.item-select');
+            const qtyInput = row.querySelector('.qty-input');
+            const priceInput = row.querySelector('.price-input');
+            const priceDisplay = row.querySelector('.price-display');
+            const subtotalDisplay = row.querySelector('.subtotal-display');
+
+            const selectedOption = itemSelect.options[itemSelect.selectedIndex];
+            const pricePaise = parseInt(selectedOption ? selectedOption.getAttribute('data-price') || '0' : '0', 10);
+            const qty = parseFloat(qtyInput.value) || 0;
+
+            priceInput.value = pricePaise;
+            priceDisplay.textContent = '₹' + (pricePaise / 100).toFixed(2);
+
+            const lineTotalPaise = Math.round(qty * pricePaise);
+            subtotalDisplay.textContent = (lineTotalPaise / 100).toFixed(2);
+
+            grandTotalPaise += lineTotalPaise;
+            totalCount += qty;
+        });
+
+        if (grandTotalEl) grandTotalEl.textContent = (grandTotalPaise / 100).toFixed(2);
+        if (grandTotalPaiseEl) grandTotalPaiseEl.textContent = grandTotalPaise;
+        if (totalItemCountEl) totalItemCountEl.textContent = totalCount;
+    }
+
+    function addRow() {
+        const clone = lineTemplate.content.cloneNode(true);
+        const row = clone.querySelector('.order-line-row');
+
+        const itemSelect = row.querySelector('.item-select');
+        const qtyInput = row.querySelector('.qty-input');
+        const removeBtn = row.querySelector('.remove-line-btn');
+
+        itemSelect.addEventListener('change', calculateTotals);
+        qtyInput.addEventListener('input', calculateTotals);
+
+        removeBtn.addEventListener('click', function() {
+            if (document.querySelectorAll('.order-line-row').length > 1) {
+                row.remove();
+                calculateTotals();
+                updateRowNumbers();
+            } else {
+                alert('An order must have at least one product line.');
+            }
+        });
+
+        linesContainer.appendChild(clone);
+        updateRowNumbers();
+        calculateTotals();
+    }
+
+    function updateRowNumbers() {
+        const rows = document.querySelectorAll('.order-line-row');
+        rows.forEach((r, idx) => {
+            const numEl = r.querySelector('.line-number');
+            if (numEl) numEl.textContent = 'Item #' + (idx + 1);
+            const rmBtn = r.querySelector('.remove-line-btn');
+            if (rmBtn) {
+                rmBtn.style.visibility = rows.length > 1 ? 'visible' : 'hidden';
+            }
+        });
+    }
+
+    if (addLineBtn) {
+        addLineBtn.addEventListener('click', addRow);
+    }
+
+    // Add first row on initial load
+    addRow();
+
+    // Prevent double submission client-side
+    const form = document.getElementById('orderForm');
+    if (form) {
+        form.addEventListener('submit', function() {
+            const submitBtn = document.getElementById('submitBtn');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span>⏳ Submitting Order...</span>';
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

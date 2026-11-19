@@ -4,6 +4,7 @@
 
 {% block content %}
 <div class="space-y-6">
+    <!-- Hero Banner -->
     <div class="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-6 text-white shadow-lg">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
@@ -13,40 +14,95 @@
                 <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Field Sales Portal</h1>
                 <p class="text-emerald-100 text-sm mt-1">Welcome back, {{ user.username }}</p>
             </div>
-            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
-                <span class="text-emerald-200">Device Mode:</span>
-                <span class="font-bold text-white ml-1">📱 Mobile Optimized</span>
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20 flex items-center justify-between md:justify-start gap-3">
+                <div>
+                    <span class="text-emerald-200 block text-xs">Total Orders:</span>
+                    <span class="font-bold text-white text-base font-mono">{{ orders_count }}</span>
+                </div>
+                <div class="border-l border-white/20 pl-3">
+                    <span class="text-emerald-200 block text-xs">Booked Value:</span>
+                    <span class="font-bold text-white text-base font-mono">₹{{ total_value_rupees }}</span>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
-            <div class="text-2xl mb-2">📝</div>
-            <h2 class="font-bold text-slate-800 text-base mb-1">New Retail Order</h2>
-            <p class="text-slate-600 text-xs mb-4">Pick a retailer/distributor, select murukku & snack items, and submit directly to the factory.</p>
-            <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-lg text-xs transition">
-                Create Order
-            </button>
+    <!-- Quick Action Cards (Mobile First, Big Buttons) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <!-- New Order Card -->
+        <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition flex flex-col justify-between">
+            <div>
+                <div class="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-xl flex items-center justify-center text-2xl mb-4">
+                    📝
+                </div>
+                <h2 class="font-extrabold text-slate-800 text-xl mb-1">New Order</h2>
+                <p class="text-slate-600 text-sm mb-6 leading-relaxed">
+                    Pick a retailer or distributor, select snack items with quantities (price pre-filled), and submit directly to factory.
+                </p>
+            </div>
+            <a href="{% url 'order_create' %}"
+               class="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold py-3.5 px-4 rounded-xl text-center shadow-md transition flex items-center justify-center space-x-2 text-base">
+                <span>➕</span>
+                <span>Create New Order</span>
+            </a>
         </div>
 
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
-            <div class="text-2xl mb-2">📦</div>
-            <h2 class="font-bold text-slate-800 text-base mb-1">My Orders & Status</h2>
-            <p class="text-slate-600 text-xs mb-4">Track submitted orders through verification, invoicing, and warehouse dispatch.</p>
-            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
-                View History
-            </button>
-        </div>
-
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
-            <div class="text-2xl mb-2">📊</div>
-            <h2 class="font-bold text-slate-800 text-base mb-1">Customer Sales</h2>
-            <p class="text-slate-600 text-xs mb-4">Review customer-wise sales volumes, pending balance, and monthly performance.</p>
-            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
-                Customer Sales
-            </button>
+        <!-- My Orders Card -->
+        <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition flex flex-col justify-between">
+            <div>
+                <div class="w-12 h-12 bg-indigo-100 text-indigo-700 rounded-xl flex items-center justify-center text-2xl mb-4">
+                    📦
+                </div>
+                <div class="flex items-center justify-between mb-1">
+                    <h2 class="font-extrabold text-slate-800 text-xl">My Orders</h2>
+                    <span class="bg-indigo-50 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-full border border-indigo-100">
+                        {{ orders_count }} Total
+                    </span>
+                </div>
+                <p class="text-slate-600 text-sm mb-6 leading-relaxed">
+                    Track your orders through submission, factory verification, tax invoicing, and warehouse dispatch.
+                </p>
+            </div>
+            <a href="{% url 'order_list' %}"
+               class="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold py-3.5 px-4 rounded-xl text-center shadow-md transition flex items-center justify-center space-x-2 text-base">
+                <span>📋</span>
+                <span>View My Orders</span>
+            </a>
         </div>
     </div>
+
+    <!-- Recent Orders Section -->
+    {% if recent_orders %}
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-slate-800 text-lg">Recent Submissions</h3>
+            <a href="{% url 'order_list' %}" class="text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+                View All →
+            </a>
+        </div>
+        <div class="divide-y divide-slate-100">
+            {% for order in recent_orders %}
+            <a href="{% url 'order_detail' order.pk %}" class="py-3 flex items-center justify-between hover:bg-slate-50 px-2 rounded-lg transition block">
+                <div>
+                    <div class="font-bold text-slate-800 text-sm">{{ order.customer.name }}</div>
+                    <div class="text-xs text-slate-500">{{ order.created_at|date:"d M Y, H:i" }} &bull; {{ order.lines.count }} items</div>
+                </div>
+                <div class="text-right">
+                    <div class="font-bold text-slate-800 text-sm font-mono">₹{{ order.total_rupees }}</div>
+                    <span class="inline-block mt-0.5 px-2 py-0.5 text-[11px] font-bold uppercase rounded-full
+                        {% if order.status == 'submitted' %}bg-amber-100 text-amber-800
+                        {% elif order.status == 'approved' %}bg-blue-100 text-blue-800
+                        {% elif order.status == 'rejected' %}bg-rose-100 text-rose-800
+                        {% elif order.status == 'invoiced' %}bg-indigo-100 text-indigo-800
+                        {% elif order.status == 'dispatched' %}bg-emerald-100 text-emerald-800
+                        {% else %}bg-slate-100 text-slate-700{% endif %}">
+                        {{ order.get_status_display }}
+                    </span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

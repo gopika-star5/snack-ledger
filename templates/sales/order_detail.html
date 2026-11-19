@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+
+{% block title %}Order #{{ order.id }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6 pb-12">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <a href="{% url 'order_list' %}" class="inline-flex items-center space-x-1.5 text-xs md:text-sm font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl transition">
+            <span>←</span>
+            <span>Back to My Orders</span>
+        </a>
+        <a href="{% url 'order_create' %}" class="inline-flex items-center space-x-1 text-xs md:text-sm font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3.5 py-2 rounded-xl transition">
+            <span>➕</span>
+            <span>New Order</span>
+        </a>
+    </div>
+
+    <!-- Main Order Details Card -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-6">
+        <!-- Top Status Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+            <div>
+                <span class="text-xs uppercase tracking-wider font-bold text-slate-400">Order Reference</span>
+                <h1 class="text-2xl md:text-3xl font-extrabold text-slate-900">Order #{{ order.id }}</h1>
+                <p class="text-xs text-slate-500 mt-0.5">Submitted on {{ order.created_at|date:"d M Y, H:i" }}</p>
+            </div>
+            <div>
+                <span class="inline-flex items-center px-3.5 py-1.5 text-xs font-black uppercase tracking-wider rounded-full border
+                    {% if order.status == 'submitted' %}bg-amber-50 text-amber-800 border-amber-200
+                    {% elif order.status == 'approved' %}bg-blue-50 text-blue-800 border-blue-200
+                    {% elif order.status == 'rejected' %}bg-rose-50 text-rose-800 border-rose-200
+                    {% elif order.status == 'invoiced' %}bg-indigo-50 text-indigo-800 border-indigo-200
+                    {% elif order.status == 'dispatched' %}bg-emerald-50 text-emerald-800 border-emerald-200
+                    {% else %}bg-slate-50 text-slate-700 border-slate-200{% endif %}">
+                    {% if order.status == 'submitted' %}⏳ Submitted
+                    {% elif order.status == 'approved' %}✓ Approved
+                    {% elif order.status == 'rejected' %}✕ Rejected
+                    {% elif order.status == 'invoiced' %}🧾 Invoiced
+                    {% elif order.status == 'dispatched' %}🚚 Dispatched
+                    {% else %}{{ order.get_status_display }}{% endif %}
+                </span>
+            </div>
+        </div>
+
+        <!-- Customer & Meta Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+            <div>
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-wider block">Customer Details</span>
+                <div class="font-extrabold text-slate-800 text-base mt-1">{{ order.customer.name }}</div>
+                <div class="text-xs text-slate-600 mt-0.5">{{ order.customer.get_customer_type_display }} &bull; {{ order.customer.state }}</div>
+                {% if order.customer.gstin %}
+                <div class="text-xs font-mono text-slate-500 mt-0.5">GSTIN: {{ order.customer.gstin }}</div>
+                {% endif %}
+            </div>
+            <div>
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-wider block">Order Meta</span>
+                <div class="text-xs text-slate-600 mt-1">
+                    <div>Salesman: <strong class="text-slate-800">{{ order.salesman.username }}</strong></div>
+                    <div class="font-mono text-slate-400 truncate mt-0.5">UUID: {{ order.client_uuid }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Line Items Table -->
+        <div class="space-y-3">
+            <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wider">Ordered Items</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-slate-500 border-b border-slate-200 text-xs uppercase tracking-wider">
+                            <th class="pb-2 font-bold">Item</th>
+                            <th class="pb-2 text-right font-bold">Qty</th>
+                            <th class="pb-2 text-right font-bold">Unit Price</th>
+                            <th class="pb-2 text-right font-bold">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 font-mono">
+                        {% for line in order.lines.all %}
+                        <tr class="hover:bg-slate-50">
+                            <td class="py-3 font-sans font-semibold text-slate-800">{{ line.item.name }}</td>
+                            <td class="py-3 text-right text-slate-700">{{ line.qty }} {{ line.item.stock_unit.code }}</td>
+                            <td class="py-3 text-right text-slate-600">₹{{ line.price_rupees }} <span class="text-[11px] text-slate-400">({{ line.price_paise }}p)</span></td>
+                            <td class="py-3 text-right font-bold text-slate-900">₹{{ line.total_rupees }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="border-t-2 border-slate-200 font-mono">
+                        <tr>
+                            <td colspan="3" class="pt-4 text-right font-sans font-bold text-slate-700">Total:</td>
+                            <td class="pt-4 text-right font-black text-xl text-slate-900">₹{{ order.total_rupees }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="4" class="text-right text-xs text-slate-400">
+                                Total in paise: {{ order.total_paise }} paise
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        {% if order.note %}
+        <div class="bg-amber-50/60 p-4 rounded-xl border border-amber-200/60 text-xs text-amber-900">
+            <strong class="font-bold">Order Note:</strong> {{ order.note }}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Big Back Button -->
+    <a href="{% url 'order_list' %}"
+       class="w-full bg-slate-200 hover:bg-slate-300 active:scale-[0.99] text-slate-800 font-bold py-3.5 px-4 rounded-xl text-center block transition text-base">
+        ← Back to All Orders
+    </a>
+</div>
+{% endblock %}
