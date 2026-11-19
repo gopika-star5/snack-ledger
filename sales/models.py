@@ -40,6 +40,15 @@ class Order(models.Model):
         choices=STATUS_CHOICES,
         default=STATUS_SUBMITTED,
     )
+    has_shortage = models.BooleanField(
+        default=False,
+        help_text="Flag indicating whether finished goods stock was insufficient when reviewed/approved",
+    )
+    rejection_reason = models.TextField(
+        blank=True,
+        default='',
+        help_text="Reason provided when an admin rejects the order",
+    )
     note = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 

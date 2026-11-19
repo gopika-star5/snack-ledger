@@ -8,7 +8,8 @@ from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404, redirect, render
 
 from core.decorators import role_required
-from core.models import Customer, Item
+from core.ledger import get_balance
+from core.models import Customer, Item, AuditLog
 from .models import Order, OrderLine
 
 
@@ -197,9 +198,15 @@ def order_list(request):
     return render(request, 'sales/order_list.html', context)
 
 
-@role_required('salesman')
 def order_detail(request, pk):
-    """View details of a single order. Strictly scoped to the order owner."""
+    """View details of a single order. Strictly scoped to the order owner or admin/owner."""
+    if not request.user.is_authenticated:
+        return redirect('login')
+    if request.user.is_superuser or request.user.groups.filter(name__in=['admin', 'owner']).exists():
+        return redirect('admin_order_detail', pk=pk)
+    if not request.user.groups.filter(name='salesman').exists():
+        raise PermissionDenied("Access forbidden: User is not in 'salesman' role.")
+
     order = get_object_or_404(
         Order.objects.prefetch_related('lines__item', 'customer'),
         pk=pk,
@@ -211,3 +218,320 @@ def order_detail(request, pk):
         'order': order,
     }
     return render(request, 'sales/order_detail.html', context)
+
+
+@role_required('admin', 'owner')
+def admin_pending_orders(request):
+    """
+    Pending orders list for admin & owner roles:
+    All orders with status 'submitted', showing customer, salesman, date, and total.
+    """
+    orders = (
+        Order.objects.filter(status=Order.STATUS_SUBMITTED)
+        .select_related('customer', 'salesman')
+        .prefetch_related('lines__item', 'lines__item__stock_unit')
+        .order_by('-created_at')
+    )
+    context = {
+        'orders': orders,
+    }
+    return render(request, 'sales/admin_pending_orders.html', context)
+
+
+@role_required('admin', 'owner')
+def admin_order_detail(request, pk):
+    """
+    Admin order review and verification page:
+    Shows line items, ordered qty, finished goods stock balance from ledger,
+    shortage = max(0, ordered - available), and red alert if shortage exists.
+    Admin can edit each line's qty and price, then Approve or Reject with a reason.
+    Approving sets status='approved' and saves has_shortage flag on order.
+    AuditLog entry is created for every edit, approval, and rejection.
+    """
+    order = get_object_or_404(
+        Order.objects.select_related('customer', 'salesman')
+        .prefetch_related('lines__item', 'lines__item__stock_unit'),
+        pk=pk,
+    )
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '').strip().lower()
+        if not action:
+            if 'approve' in request.POST or request.POST.get('status') == 'approved':
+                action = 'approve'
+            elif 'reject' in request.POST or request.POST.get('status') == 'rejected':
+                action = 'reject'
+            elif 'edit' in request.POST or 'save' in request.POST:
+                action = 'edit'
+
+        # 1. Parse and apply line edits (quantity & price)
+        lines = list(order.lines.all())
+        line_edits = _parse_admin_line_edits(request, lines)
+        changes = []
+
+        with transaction.atomic():
+            for line in lines:
+                edit_data = line_edits.get(line.pk)
+                if not edit_data:
+                    continue
+                changed = False
+                old_qty = line.qty
+                old_price = line.price_paise
+
+                new_qty = edit_data.get('qty')
+                if new_qty is not None and new_qty != old_qty:
+                    line.qty = new_qty
+                    changed = True
+
+                new_price = edit_data.get('price_paise')
+                if new_price is not None and new_price != old_price:
+                    line.price_paise = new_price
+                    changed = True
+
+                if changed:
+                    line.save()
+                    changes.append({
+                        'line_id': line.pk,
+                        'item': line.item.name,
+                        'old_qty': str(old_qty),
+                        'new_qty': str(line.qty),
+                        'old_price_paise': old_price,
+                        'new_price_paise': line.price_paise,
+                    })
+
+            if changes:
+                AuditLog.objects.create(
+                    user=request.user,
+                    action='edit',
+                    model_name='order',
+                    object_id=str(order.pk),
+                    details={'changes': changes},
+                )
+
+            # 2. Handle Action (Approve / Reject / Edit)
+            if action in ['approve', 'approved']:
+                # Recalculate shortage based on current lines
+                has_shortage = False
+                for line in order.lines.all():
+                    avail = get_balance(line.item)
+                    if line.qty > avail:
+                        has_shortage = True
+                        break
+
+                order.has_shortage = has_shortage
+                order.status = Order.STATUS_APPROVED
+                order.save()
+
+                AuditLog.objects.create(
+                    user=request.user,
+                    action='approve',
+                    model_name='order',
+                    object_id=str(order.pk),
+                    details={
+                        'status': 'approved',
+                        'has_shortage': has_shortage,
+                    },
+                )
+                messages.success(request, f"Order #{order.pk} approved successfully.")
+                return redirect('admin_order_detail', pk=order.pk)
+
+            elif action in ['reject', 'rejected']:
+                reason = (
+                    request.POST.get('rejection_reason')
+                    or request.POST.get('reason')
+                    or request.POST.get('note', '')
+                ).strip()
+
+                order.status = Order.STATUS_REJECTED
+                order.rejection_reason = reason
+                order.save()
+
+                AuditLog.objects.create(
+                    user=request.user,
+                    action='reject',
+                    model_name='order',
+                    object_id=str(order.pk),
+                    details={
+                        'status': 'rejected',
+                        'reason': reason,
+                    },
+                )
+                messages.warning(request, f"Order #{order.pk} rejected.")
+                return redirect('admin_order_detail', pk=order.pk)
+
+            elif changes or action in ['edit', 'save', 'update']:
+                messages.success(request, f"Order #{order.pk} updated successfully.")
+                return redirect('admin_order_detail', pk=order.pk)
+
+    # GET request: Calculate stock balance and shortages for each line
+    lines_info = []
+    order_shortage = Decimal('0')
+    lines = list(order.lines.all())
+
+    for line in lines:
+        available = get_balance(line.item)
+        shortage = max(Decimal('0'), line.qty - available)
+        has_shortage = shortage > Decimal('0')
+        order_shortage += shortage
+
+        # Format display numbers
+        if shortage == int(shortage):
+            shortage_display = str(int(shortage))
+        else:
+            shortage_display = str(shortage.normalize())
+
+        if available == int(available):
+            available_display = str(int(available))
+        else:
+            available_display = str(available.normalize())
+
+        unit_code = line.item.stock_unit.code if line.item and line.item.stock_unit else 'packet'
+        if unit_code in ['packet', 'pouch', 'carton', 'piece']:
+            unit_display = f"{unit_code}s" if shortage != 1 else unit_code
+        else:
+            unit_display = unit_code
+
+        # Attach helper attributes to line
+        line.available = available
+        line.available_display = available_display
+        line.shortage = shortage
+        line.shortage_display = shortage_display
+        line.has_shortage = has_shortage
+        line.unit_display = unit_display
+
+        lines_info.append({
+            'line': line,
+            'item': line.item,
+            'ordered': line.qty,
+            'available': available,
+            'available_display': available_display,
+            'shortage': shortage,
+            'shortage_display': shortage_display,
+            'has_shortage': has_shortage,
+            'unit_display': unit_display,
+        })
+
+    order_has_shortage = order_shortage > Decimal('0')
+    if order_shortage == int(order_shortage):
+        order_shortage_display = str(int(order_shortage))
+    else:
+        order_shortage_display = str(order_shortage.normalize())
+
+    order.shortage = order_shortage
+    order.shortage_display = order_shortage_display
+    order.has_shortage_now = order_has_shortage
+
+    context = {
+        'order': order,
+        'lines': lines,
+        'lines_info': lines_info,
+        'order_shortage': order_shortage,
+        'order_shortage_display': order_shortage_display,
+        'order_has_shortage': order_has_shortage,
+    }
+    return render(request, 'sales/admin_order_detail.html', context)
+
+
+def _parse_admin_line_edits(request, lines):
+    """
+    Parse line quantity and price edits from request.POST with support for
+    multiple key conventions.
+    """
+    edits = {}
+
+    # Parallel lists: line_id, qty, price_paise
+    line_ids = (
+        request.POST.getlist('line_id')
+        or request.POST.getlist('line_ids')
+        or request.POST.getlist('lines')
+    )
+    qtys = (
+        request.POST.getlist('qty')
+        or request.POST.getlist('quantity')
+        or request.POST.getlist('quantities')
+    )
+    prices = (
+        request.POST.getlist('price_paise')
+        or request.POST.getlist('price')
+        or request.POST.getlist('prices')
+    )
+
+    if line_ids and qtys:
+        for idx, lid_str in enumerate(line_ids):
+            try:
+                lid = int(lid_str)
+            except (ValueError, TypeError):
+                continue
+            q_val = qtys[idx] if idx < len(qtys) else None
+            p_val = prices[idx] if idx < len(prices) else None
+            edits[lid] = {'qty_raw': q_val, 'price_raw': p_val}
+
+    for line in lines:
+        lid = line.pk
+        q_val = None
+        p_val = None
+
+        qty_keys = [
+            f'line_{lid}_qty',
+            f'qty_{lid}',
+            f'line-{lid}-qty',
+            f'lines[{lid}][qty]',
+            f'line_{lid}_quantity',
+            f'quantity_{lid}',
+        ]
+        for k in qty_keys:
+            if k in request.POST:
+                q_val = request.POST[k]
+                break
+
+        price_keys = [
+            f'line_{lid}_price_paise',
+            f'price_paise_{lid}',
+            f'line-{lid}-price_paise',
+            f'lines[{lid}][price_paise]',
+            f'line_{lid}_price',
+            f'price_{lid}',
+            f'line-{lid}-price',
+            f'lines[{lid}][price]',
+        ]
+        for k in price_keys:
+            if k in request.POST:
+                p_val = request.POST[k]
+                break
+
+        # Fallback for single-line orders
+        if len(lines) == 1:
+            if q_val is None:
+                q_val = request.POST.get('qty') or request.POST.get('quantity') or request.POST.get('new_qty')
+            if p_val is None:
+                p_val = request.POST.get('price_paise') or request.POST.get('price') or request.POST.get('new_price')
+
+        if q_val is not None or p_val is not None:
+            if lid not in edits:
+                edits[lid] = {}
+            if q_val is not None:
+                edits[lid]['qty_raw'] = q_val
+            if p_val is not None:
+                edits[lid]['price_raw'] = p_val
+
+    results = {}
+    for lid, vals in edits.items():
+        q_dec = None
+        p_int = None
+        if 'qty_raw' in vals and vals['qty_raw'] is not None and str(vals['qty_raw']).strip() != '':
+            try:
+                q_dec = Decimal(str(vals['qty_raw']).strip())
+            except Exception:
+                pass
+        if 'price_raw' in vals and vals['price_raw'] is not None and str(vals['price_raw']).strip() != '':
+            raw_p = str(vals['price_raw']).strip()
+            try:
+                if '.' in raw_p:
+                    p_int = int(Decimal(raw_p) * 100)
+                else:
+                    p_int = int(raw_p)
+            except Exception:
+                pass
+        results[lid] = {'qty': q_dec, 'price_paise': p_int}
+
+    return results

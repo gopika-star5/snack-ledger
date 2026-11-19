@@ -7,7 +7,8 @@ from django.db import IntegrityError
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from core.models import Customer, Item
+from core.ledger import get_balance, issue_stock, receive_stock
+from core.models import AuditLog, Customer, Item
 from sales.models import Order, OrderLine
 
 User = get_user_model()
@@ -27,6 +28,14 @@ class SalesOrderTests(TestCase):
 
         self.client_b = Client()
         self.client_b.login(username='salesman_b', password='demo1234')
+
+        self.admin_user = User.objects.get(username='admin1')
+        self.admin_client = Client()
+        self.admin_client.login(username='admin1', password='demo1234')
+
+        self.owner_user = User.objects.get(username='owner1')
+        self.owner_client = Client()
+        self.owner_client.login(username='owner1', password='demo1234')
 
     def test_salesman_a_cannot_see_salesman_b_orders(self):
         """salesman_a cannot see salesman_b's orders in list or detail views."""
@@ -150,3 +159,180 @@ class SalesOrderTests(TestCase):
         self.assertIn(reverse('order_list'), content)
         self.assertIn("New Order", content)
         self.assertIn("My Orders", content)
+
+    def test_salesman_a_gets_403_on_pending_orders_page(self):
+        """salesman_a gets 403 on the pending orders page; admin and owner can access."""
+        # salesman_a gets 403
+        response_salesman = self.client_a.get(reverse('admin_pending_orders'))
+        self.assertEqual(response_salesman.status_code, 403)
+
+        # salesman_b gets 403
+        response_salesman_b = self.client_b.get(reverse('admin_pending_orders'))
+        self.assertEqual(response_salesman_b.status_code, 403)
+
+        # admin gets 200
+        response_admin = self.admin_client.get(reverse('admin_pending_orders'))
+        self.assertEqual(response_admin.status_code, 200)
+
+        # owner gets 200
+        response_owner = self.owner_client.get(reverse('admin_pending_orders'))
+        self.assertEqual(response_owner.status_code, 200)
+
+    def test_finished_goods_stock_238_order_150_shows_no_shortage(self):
+        """with finished goods stock 238, a 150 packet order shows no shortage."""
+        # Benchmark opening stock for Murukku is 50. Receive 188 to reach exactly 238.
+        receive_stock(
+            item=self.murukku,
+            qty=Decimal('188'),
+            unit_cost_paise=3000,
+            source_type='production',
+            source_id='test_run_238',
+            user=self.admin_user,
+        )
+        self.assertEqual(get_balance(self.murukku), Decimal('238'))
+
+        # Create a 150 packet order for Retailer A
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.retailer_a,
+            salesman=self.salesman_a,
+            status=Order.STATUS_SUBMITTED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('150'),
+            price_paise=5000,
+        )
+
+        # Admin opens the order detail page
+        response = self.admin_client.get(reverse('admin_order_detail', args=[order.pk]))
+        self.assertEqual(response.status_code, 200)
+
+        # Order shows NO shortage
+        self.assertNotContains(response, 'Shortage of')
+        self.assertContains(response, 'No shortage')
+        self.assertFalse(response.context['order_has_shortage'])
+        self.assertEqual(response.context['order_shortage'], Decimal('0'))
+        self.assertEqual(response.context['lines_info'][0]['shortage'], Decimal('0'))
+
+    def test_finished_goods_stock_88_order_120_shows_shortage_of_32(self):
+        """with finished goods stock 88, a 120 packet order shows a shortage of 32."""
+        # 50 opening + 188 produced - 150 dispatched = 88 packets
+        receive_stock(
+            item=self.murukku,
+            qty=Decimal('188'),
+            unit_cost_paise=3000,
+            source_type='production',
+            source_id='test_run_prod',
+            user=self.admin_user,
+        )
+        issue_stock(
+            item=self.murukku,
+            qty=Decimal('150'),
+            source_type='dispatch',
+            source_id='test_dispatch_150',
+            user=self.admin_user,
+        )
+        self.assertEqual(get_balance(self.murukku), Decimal('88'))
+
+        # Create a 120 packet order for Distributor B
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.distributor_b,
+            salesman=self.salesman_b,
+            status=Order.STATUS_SUBMITTED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('120'),
+            price_paise=5000,
+        )
+
+        # Admin opens the order detail page
+        response = self.admin_client.get(reverse('admin_order_detail', args=[order.pk]))
+        self.assertEqual(response.status_code, 200)
+
+        # Shows a clear red alert / shortage of 32 packets
+        self.assertContains(response, 'Shortage of 32 packets')
+        self.assertTrue(response.context['order_has_shortage'])
+        self.assertEqual(response.context['order_shortage'], Decimal('32'))
+        self.assertEqual(response.context['lines_info'][0]['shortage'], Decimal('32'))
+
+    def test_editing_quantity_then_approving_saves_edited_qty_and_creates_audit_log(self):
+        """editing a quantity then approving saves the edited quantity and creates an audit log entry."""
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.retailer_a,
+            salesman=self.salesman_a,
+            status=Order.STATUS_SUBMITTED,
+        )
+        line = OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('150'),
+            price_paise=5000,
+        )
+
+        # Step 1: Admin edits the quantity to 135 and approves the order
+        post_data = {
+            'action': 'approve',
+            f'line_{line.id}_qty': '135',
+            f'line_{line.id}_price_paise': '5000',
+        }
+        res = self.admin_client.post(reverse('admin_order_detail', args=[order.pk]), post_data)
+        self.assertEqual(res.status_code, 302)
+
+        # Verify edited quantity is saved
+        line.refresh_from_db()
+        self.assertEqual(line.qty, Decimal('135'))
+
+        # Verify order is approved
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.STATUS_APPROVED)
+        self.assertTrue(hasattr(order, 'has_shortage'))
+
+        # Verify AuditLog entries exist for the order
+        logs = AuditLog.objects.filter(object_id=str(order.pk))
+        self.assertTrue(logs.exists())
+        self.assertTrue(logs.filter(action='edit').exists())
+        self.assertTrue(logs.filter(action='approve').exists())
+
+    def test_admin_home_review_orders_link(self):
+        """Connect the 'Review Orders' card on the admin home page to the Pending Orders list."""
+        response = self.admin_client.get(reverse('admin_home'))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn(reverse('admin_pending_orders'), content)
+        self.assertIn("Review Orders", content)
+
+    def test_reject_order_with_reason_creates_audit_log(self):
+        """Rejecting an order with a reason updates status to rejected and creates an audit log entry."""
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.retailer_a,
+            salesman=self.salesman_a,
+            status=Order.STATUS_SUBMITTED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('50'),
+            price_paise=5000,
+        )
+
+        post_data = {
+            'action': 'reject',
+            'rejection_reason': 'Retailer store temporarily closed',
+        }
+        res = self.admin_client.post(reverse('admin_order_detail', args=[order.pk]), post_data)
+        self.assertEqual(res.status_code, 302)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.STATUS_REJECTED)
+        self.assertEqual(order.rejection_reason, 'Retailer store temporarily closed')
+
+        log = AuditLog.objects.filter(object_id=str(order.pk), action='reject').first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.details.get('status'), 'rejected')

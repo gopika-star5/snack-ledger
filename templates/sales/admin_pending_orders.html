@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+
+{% block title %}Pending Orders Review{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6 pb-12">
+    <!-- Blue Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center space-x-2 text-xs text-blue-200 mb-2">
+                    <a href="{% url 'admin_home' %}" class="hover:text-white transition">Admin Home</a>
+                    <span>&bull;</span>
+                    <span class="text-white font-semibold">Pending Orders</span>
+                </div>
+                <span class="bg-blue-900/60 text-blue-200 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+                    Role: Factory Admin
+                </span>
+                <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Incoming Field Orders</h1>
+                <p class="text-blue-100 text-sm mt-1">Review pending orders submitted by salesmen, verify against inventory, and approve or reject.</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
+                <span class="text-blue-200">Pending Review:</span>
+                <span class="font-bold text-white ml-1 text-base">{{ orders|length }} Orders</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Orders List -->
+    {% if orders %}
+    <div class="space-y-4">
+        {% for order in orders %}
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:border-blue-300 transition p-5 space-y-4">
+            <!-- Card Header: ID, Date, Status Badge -->
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <div class="flex items-center space-x-2.5">
+                    <span class="font-extrabold text-slate-900 text-base md:text-lg">Order #{{ order.id }}</span>
+                    <span class="text-slate-400 text-xs">&bull;</span>
+                    <span class="text-xs text-slate-500 font-medium">{{ order.created_at|date:"d M Y, H:i" }}</span>
+                </div>
+                <div>
+                    <span class="inline-flex items-center px-3 py-1 text-xs font-black uppercase tracking-wider rounded-full border bg-amber-50 text-amber-800 border-amber-200">
+                        ⏳ Submitted
+                    </span>
+                </div>
+            </div>
+
+            <!-- Customer, Salesman, Lines Info Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider block">Customer</span>
+                    <div class="font-bold text-slate-800 text-base mt-0.5">{{ order.customer.name }}</div>
+                    <div class="text-xs text-slate-500">{{ order.customer.state }} &bull; {{ order.customer.get_customer_type_display }}</div>
+                    {% if order.customer.gstin %}
+                    <div class="text-xs font-mono text-slate-400 mt-0.5">GSTIN: {{ order.customer.gstin }}</div>
+                    {% endif %}
+                </div>
+                <div>
+                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider block">Salesman</span>
+                    <div class="font-bold text-slate-800 text-base mt-0.5">{{ order.salesman.username }}</div>
+                    <div class="text-xs text-slate-500">Date: {{ order.created_at|date:"d M Y" }}</div>
+                </div>
+                <div>
+                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider block">Ordered Lines</span>
+                    <div class="text-xs text-slate-700 mt-1 space-y-0.5">
+                        {% for line in order.lines.all %}
+                        <div class="flex justify-between font-mono">
+                            <span>{{ line.item.name }} x {{ line.qty }}</span>
+                            <span class="text-slate-500">₹{{ line.total_rupees }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            {% if order.note %}
+            <div class="bg-slate-50 p-3 rounded-xl text-xs text-slate-600 border border-slate-100">
+                <strong class="text-slate-700">Salesman Note:</strong> {{ order.note }}
+            </div>
+            {% endif %}
+
+            <!-- Card Footer: Total & Review Button -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Total:</span>
+                    <span class="text-xl md:text-2xl font-black text-slate-900 font-mono">₹{{ order.total_rupees }}</span>
+                    <span class="text-xs text-slate-400 font-mono">({{ order.total_paise }} paise)</span>
+                </div>
+                <a href="{% url 'admin_order_detail' order.pk %}"
+                   class="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold py-2.5 px-5 rounded-xl text-xs md:text-sm shadow-md transition">
+                    <span>Review & Verify Order</span>
+                    <span>→</span>
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center space-y-4">
+        <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-3xl mx-auto">
+            ✓
+        </div>
+        <div class="space-y-1">
+            <h2 class="text-lg font-bold text-slate-800">No Pending Orders</h2>
+            <p class="text-sm text-slate-500 max-w-sm mx-auto">
+                All submitted orders have been reviewed. There are no orders currently awaiting admin approval.
+            </p>
+        </div>
+        <div class="pt-2">
+            <a href="{% url 'admin_home' %}"
+               class="inline-flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-5 rounded-xl transition text-sm">
+                <span>← Back to Admin Desk</span>
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
