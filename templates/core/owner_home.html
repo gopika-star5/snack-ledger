@@ -15,7 +15,11 @@
             </div>
             <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
                 <span class="text-slate-300">Operations:</span>
-                <span class="font-bold text-emerald-400 ml-1">● Healthy</span>
+                {% if operations_healthy %}
+                    <span class="font-bold text-emerald-400 ml-1">● Healthy</span>
+                {% else %}
+                    <span class="font-bold text-amber-400 ml-1">● Needs attention ({{ alert_count }})</span>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -23,58 +27,66 @@
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <span class="text-slate-500 text-xs uppercase font-bold tracking-wider">Today's Orders</span>
-            <div class="text-2xl font-black text-slate-800 mt-2">150 pkts</div>
-            <span class="text-emerald-600 text-xs mt-1 block">Retailer A verified</span>
+            <div class="text-2xl font-black text-slate-800 mt-2">{{ todays_orders_qty|default:0 }} pkts</div>
+            <span class="{% if todays_orders_count > 0 %}text-emerald-600{% else %}text-slate-500{% endif %} text-xs mt-1 block">{{ todays_orders_sublabel }}</span>
         </div>
 
         <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <span class="text-slate-500 text-xs uppercase font-bold tracking-wider">Murukku Stock</span>
-            <div class="text-2xl font-black text-slate-800 mt-2">88 pkts</div>
+            <div class="text-2xl font-black text-slate-800 mt-2">{{ murukku_stock }} pkts</div>
             <span class="text-slate-500 text-xs mt-1 block">Finished goods</span>
         </div>
 
         <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <span class="text-slate-500 text-xs uppercase font-bold tracking-wider">Yield Variance</span>
-            <div class="text-2xl font-black text-amber-600 mt-2">-6%</div>
-            <span class="text-amber-700 text-xs mt-1 block">188 vs 200 expected</span>
+            <div class="text-2xl font-black {% if latest_run and latest_run.yield_flagged %}text-amber-600{% else %}text-slate-800{% endif %} mt-2">{{ yield_variance_val }}</div>
+            <span class="{% if latest_run and latest_run.yield_flagged %}text-amber-700{% else %}text-slate-500{% endif %} text-xs mt-1 block">{{ yield_sublabel }}</span>
         </div>
 
         <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <span class="text-slate-500 text-xs uppercase font-bold tracking-wider">Total Receivables</span>
-            <div class="text-2xl font-black text-slate-800 mt-2">&#8377;3,875</div>
-            <span class="text-slate-500 text-xs mt-1 block">Retailer A outstanding</span>
+            <div class="text-2xl font-black text-slate-800 mt-2">{{ total_receivables_formatted }}</div>
+            <span class="text-slate-500 text-xs mt-1 block">{{ receivables_sublabel }}</span>
         </div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <h2 class="font-bold text-slate-800 text-base mb-2">Cost & Profitability</h2>
-            <p class="text-slate-600 text-xs mb-4">View real-time cost-per-packet breakdown factoring ingredient costs, labour, power, and packing.</p>
-            <a href="{% url 'product_costing' %}" class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <div>
+                <h2 class="font-bold text-slate-800 text-base mb-2">Cost & Profitability</h2>
+                <p class="text-slate-600 text-xs mb-4">View real-time cost-per-packet breakdown factoring ingredient costs, labour, power, and packing.</p>
+            </div>
+            <a href="{% url 'product_costing' %}" class="block text-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-xs transition">
                 View Costing Breakdown
             </a>
         </div>
 
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <h2 class="font-bold text-slate-800 text-base mb-2">Variance Alerts</h2>
-            <p class="text-slate-600 text-xs mb-4">Immediate notifications for ingredient consumption or batch yield exceeding the 3% tolerance threshold.</p>
-            <button class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg text-xs transition">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <div>
+                <h2 class="font-bold text-slate-800 text-base mb-2">Variance Alerts</h2>
+                <p class="text-slate-600 text-xs mb-4">Immediate notifications for ingredient consumption or batch yield exceeding the 3% tolerance threshold.</p>
+            </div>
+            <a href="{% url 'owner_dashboard' %}" class="block text-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-xs transition">
                 Review Alerts
-            </button>
+            </a>
         </div>
 
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <h2 class="font-bold text-slate-800 text-base mb-2">Audit & Financial Reports</h2>
-            <p class="text-slate-600 text-xs mb-4">Access sales register, GST outward summaries, customer/product analytics, and purchase ledger.</p>
-            <a href="{% url 'reports_index' %}" class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <div>
+                <h2 class="font-bold text-slate-800 text-base mb-2">Audit & Financial Reports</h2>
+                <p class="text-slate-600 text-xs mb-4">Access sales register, GST outward summaries, customer/product analytics, and purchase ledger.</p>
+            </div>
+            <a href="{% url 'reports_index' %}" class="block text-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-xs transition">
                 View Reports
             </a>
         </div>
 
-        <div class="bg-white p-5 rounded-xl border border-emerald-200 shadow-sm">
-            <h2 class="font-bold text-slate-800 text-base mb-2">Benchmark</h2>
-            <p class="text-slate-600 text-xs mb-4">Run Section 5 benchmark test suite: verifies stock balances, variances, invoice, and GST.</p>
-            <a href="{% url 'benchmark' %}" class="inline-block bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
+        <div class="bg-white p-5 rounded-xl border border-emerald-200 shadow-sm flex flex-col justify-between">
+            <div>
+                <h2 class="font-bold text-slate-800 text-base mb-2">Benchmark</h2>
+                <p class="text-slate-600 text-xs mb-4">Run Section 5 benchmark test suite: verifies stock balances, variances, invoice, and GST.</p>
+            </div>
+            <a href="{% url 'benchmark' %}" class="block text-center w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-lg text-xs transition">
                 Run Benchmark
             </a>
         </div>

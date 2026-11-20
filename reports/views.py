@@ -1347,19 +1347,50 @@ def owner_dashboard(request):
 
     all_customers = Customer.objects.filter(invoices__isnull=False).distinct()
     total_outstanding_paise = 0
+    customers_owing = []
     for customer in all_customers:
         ageing = calculate_customer_ageing(customer, today=today)
-        total_outstanding_paise += (ageing['bucket_0_30'] + ageing['bucket_31_60'] +
-                                    ageing['bucket_61_90'] + ageing['bucket_90_plus'])
+        cust_outstanding = (ageing['bucket_0_30'] + ageing['bucket_31_60'] +
+                            ageing['bucket_61_90'] + ageing['bucket_90_plus'])
+        if cust_outstanding > 0:
+            customers_owing.append((customer.name, cust_outstanding))
+        total_outstanding_paise += cust_outstanding
+
+    if len(customers_owing) == 0:
+        receivables_sublabel = "No outstanding dues"
+    elif len(customers_owing) == 1:
+        receivables_sublabel = f"{customers_owing[0][0]} outstanding"
+    else:
+        receivables_sublabel = f"{len(customers_owing)} customers owe money"
+
+    customer_names = list(todays_orders.values_list('customer__name', flat=True).distinct())
+    if todays_orders_count == 0:
+        todays_orders_sublabel = "No orders today"
+    elif len(customer_names) == 1:
+        if todays_orders_count == 1:
+            todays_orders_sublabel = f"1 order from {customer_names[0]}"
+        else:
+            todays_orders_sublabel = f"{todays_orders_count} orders from {customer_names[0]}"
+    else:
+        todays_orders_sublabel = f"{todays_orders_count} orders from {len(customer_names)} customers"
+
+    low_stock_count = sum(1 for s in finished_stock if s['low_stock']) + sum(1 for s in raw_stock if s['low_stock'])
+    flagged_variance_count = len(flagged_runs)
+    alert_count = low_stock_count + flagged_variance_count
+    operations_healthy = (alert_count == 0)
 
     return render(request, 'reports/owner_dashboard.html', {
         'today': today,
         'todays_orders': todays_orders,
         'todays_orders_count': todays_orders_count,
+        'todays_orders_sublabel': todays_orders_sublabel,
         'finished_stock': finished_stock,
         'raw_stock': raw_stock,
         'flagged_runs': flagged_runs,
         'latest_costs': latest_costs,
         'total_outstanding_paise': total_outstanding_paise,
         'total_outstanding_formatted': format_inr(total_outstanding_paise),
+        'receivables_sublabel': receivables_sublabel,
+        'operations_healthy': operations_healthy,
+        'alert_count': alert_count,
     })

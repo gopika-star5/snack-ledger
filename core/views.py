@@ -59,8 +59,10 @@ def admin_home(request):
 
 @role_required('owner')
 def owner_home(request):
-    """Owner role home page."""
-    return render(request, 'core/owner_home.html')
+    """Owner role home page / executive dashboard."""
+    from core.services import get_owner_summary_data
+    context = get_owner_summary_data()
+    return render(request, 'core/owner_home.html', context)
 
 
 @role_required('admin', 'owner')

@@ -593,3 +593,84 @@ class ReportsSystemTests(TestCase):
         self.assertContains(response, "Collections")
         # Owner dashboard is in the index but accountant will see it listed
         self.assertContains(response, "Owner Dashboard")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Operations Status & Card Sub-label Tests (Requirement 2, 3, 4)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def test_operations_healthy_when_no_flagged_runs_and_no_low_stock(self):
+        """
+        'Operations: Healthy' is computed and shown in green when:
+        - no recent production run has a flagged variance
+        - no stock is below its reorder level
+        """
+        for url_name in ['owner_home', 'owner_dashboard']:
+            response = self.owner_client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.context['operations_healthy'])
+            self.assertEqual(response.context['alert_count'], 0)
+            self.assertContains(response, "Healthy")
+            self.assertContains(response, "text-emerald-400")
+            self.assertNotContains(response, "Needs attention")
+
+    def test_operations_needs_attention_when_variance_flagged(self):
+        """
+        'Operations: Needs attention' is shown in amber with the count of alerts
+        when a recent production run has a flagged variance.
+        """
+        self._create_production_run()  # Produces -6% yield variance, flagged=True
+
+        for url_name in ['owner_home', 'owner_dashboard']:
+            response = self.owner_client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.context['operations_healthy'])
+            self.assertEqual(response.context['alert_count'], 1)
+            self.assertContains(response, "Needs attention")
+            self.assertContains(response, "(1)")
+            self.assertContains(response, "text-amber-400")
+            self.assertNotContains(response, "● Healthy")
+
+    def test_operations_needs_attention_when_stock_below_reorder_level(self):
+        """
+        'Operations: Needs attention' is shown in amber when stock is below reorder level.
+        """
+        # Flour has 100 kg stock from seed. Set reorder level to 200 kg.
+        self.flour.reorder_level = Decimal('200')
+        self.flour.save()
+
+        for url_name in ['owner_home', 'owner_dashboard']:
+            response = self.owner_client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.context['operations_healthy'])
+            self.assertGreaterEqual(response.context['alert_count'], 1)
+            self.assertContains(response, "Needs attention")
+            self.assertContains(response, "text-amber-400")
+
+    def test_operations_needs_attention_counts_multiple_alerts(self):
+        """
+        When both a flagged run exists and stock is below reorder level,
+        alert count reflects both alerts.
+        """
+        self._create_production_run()
+        self.flour.reorder_level = Decimal('200')
+        self.flour.save()
+
+        for url_name in ['owner_home', 'owner_dashboard']:
+            response = self.owner_client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.context['operations_healthy'])
+            self.assertEqual(response.context['alert_count'], 2)
+            self.assertContains(response, "Needs attention")
+            self.assertContains(response, "(2)")
+
+    def test_owner_dashboard_card_sublabels_real_data(self):
+        """
+        Card sub-labels show real customer names, counts, or neutral labels.
+        """
+        response = self.owner_client.get(reverse('owner_home'))
+        self.assertEqual(response.status_code, 200)
+        # 1 order today from Retailer A in setUp
+        self.assertContains(response, "Retailer A")
+        # Retailer A has an unpaid benchmark invoice in setUp
+        self.assertContains(response, "Retailer A outstanding")
+
