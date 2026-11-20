@@ -1,15 +1,27 @@
+from datetime import date, timedelta
 import uuid
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import IntegrityError
+from django.db.models import Sum
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from core.ledger import get_balance, issue_stock, receive_stock
-from core.models import AuditLog, Customer, Item
-from sales.models import Order, OrderLine
+from core.ledger import InsufficientStock, get_balance, issue_stock, receive_stock
+from core.models import AuditLog, Customer, Item, StockLot, StockMovement
+from sales.models import CreditNote, Dispatch, Invoice, InvoiceLine, Order, OrderLine, Payment
+from sales.services import (
+    calculate_tax,
+    cancel_invoice,
+    create_invoice,
+    customer_outstanding,
+    dispatch_invoice,
+    next_invoice_number,
+    record_payment,
+)
 
 User = get_user_model()
 
@@ -336,3 +348,240 @@ class SalesOrderTests(TestCase):
         log = AuditLog.objects.filter(object_id=str(order.pk), action='reject').first()
         self.assertIsNotNone(log)
         self.assertEqual(log.details.get('status'), 'rejected')
+
+
+class SalesInvoiceBillingTests(TestCase):
+    def setUp(self):
+        call_command('seed_benchmark', verbosity=0)
+        self.admin_user = User.objects.get(username='admin1')
+        self.salesman_a = User.objects.get(username='salesman_a')
+        self.salesman_b = User.objects.get(username='salesman_b')
+        self.retailer_a = Customer.objects.get(name='Retailer A')
+        self.distributor_b = Customer.objects.get(name='Distributor B')
+        self.murukku = Item.objects.get(name='Murukku 200 g')
+
+    def test_tax_calculation_intra_state_retailer_a(self):
+        """Retailer A, 150 packets at 5000 paise gives taxable 750000, CGST 18750, SGST 18750, total 787500"""
+        taxable_paise = 150 * 5000  # 750000
+        tax = calculate_tax(
+            customer_state=self.retailer_a.state,
+            taxable_paise=taxable_paise,
+            gst_rate=self.murukku.gst_rate_percent,
+        )
+        self.assertEqual(tax.taxable_paise, 750000)
+        self.assertEqual(tax.cgst_paise, 18750)
+        self.assertEqual(tax.sgst_paise, 18750)
+        self.assertEqual(tax.igst_paise, 0)
+        self.assertEqual(tax.total_paise, 787500)
+
+    def test_tax_calculation_inter_state_distributor_b(self):
+        """Distributor B (Karnataka) on the same amount gives IGST 37500 and CGST/SGST 0"""
+        taxable_paise = 150 * 5000  # 750000
+        tax = calculate_tax(
+            customer_state=self.distributor_b.state,
+            taxable_paise=taxable_paise,
+            gst_rate=self.murukku.gst_rate_percent,
+        )
+        self.assertEqual(tax.taxable_paise, 750000)
+        self.assertEqual(tax.cgst_paise, 0)
+        self.assertEqual(tax.sgst_paise, 0)
+        self.assertEqual(tax.igst_paise, 37500)
+        self.assertEqual(tax.total_paise, 787500)
+
+    def test_invoice_numbers_are_sequential_with_no_gaps(self):
+        """invoice numbers are sequential with no gaps and sequence resets each year"""
+        n1 = next_invoice_number(date(2026, 4, 1))
+        self.assertEqual(n1, '2026-27/0001')
+
+        n2 = next_invoice_number(date(2026, 5, 10))
+        self.assertEqual(n2, '2026-27/0002')
+
+        n3 = next_invoice_number(date(2027, 3, 31))
+        self.assertEqual(n3, '2026-27/0003')
+
+        # New financial year resets sequence to 0001
+        n4 = next_invoice_number(date(2027, 4, 1))
+        self.assertEqual(n4, '2027-28/0001')
+
+        n5 = next_invoice_number(date(2027, 4, 2))
+        self.assertEqual(n5, '2027-28/0002')
+
+    def test_full_invoice_dispatch_payment_cancel_benchmark_scenario(self):
+        """
+        Benchmark scenario test:
+        - Finished goods stock goes from 238 to 88 after dispatch
+        - The opening lot (earlier expiry) is consumed first
+        - Payment of 400000 leaves outstanding 387500
+        - Cancelling an invoice restores stock to 238 and the invoice row still exists
+        """
+        # Benchmark opening stock has 50 packets with expiry today + 60 days
+        opening_lot = StockLot.objects.get(item=self.murukku, source_type='opening')
+        self.assertEqual(get_balance(self.murukku), Decimal('50'))
+
+        # Add production run lot of 188 packets with expiry today + 90 days
+        prod_movement = receive_stock(
+            item=self.murukku,
+            qty=Decimal('188'),
+            unit_cost_paise=3000,
+            source_type='production',
+            source_id='run-1',
+            user=self.admin_user,
+            batch_no='MUR-20261120-1',
+            expiry_date=date.today() + timedelta(days=90),
+        )
+        prod_lot = prod_movement.lot
+
+        # Total finished goods stock is now 50 + 188 = 238
+        self.assertEqual(get_balance(self.murukku), Decimal('238'))
+
+        # Salesman A orders 150 packets for Retailer A
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.retailer_a,
+            salesman=self.salesman_a,
+            status=Order.STATUS_SUBMITTED,
+        )
+        line = OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('150'),
+            price_paise=5000,
+        )
+
+        # Admin approves the order
+        order.status = Order.STATUS_APPROVED
+        order.save()
+
+        # Admin raises the GST invoice
+        invoice = create_invoice(order, user=self.admin_user)
+        self.assertEqual(invoice.status, Invoice.STATUS_POSTED)
+        self.assertEqual(invoice.taxable_paise, 750000)
+        self.assertEqual(invoice.cgst_paise, 18750)
+        self.assertEqual(invoice.sgst_paise, 18750)
+        self.assertEqual(invoice.igst_paise, 0)
+        self.assertEqual(invoice.total_paise, 787500)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.STATUS_INVOICED)
+
+        # Invoice lines created
+        inv_line = invoice.lines.first()
+        self.assertIsNotNone(inv_line)
+        self.assertEqual(inv_line.qty, Decimal('150'))
+        self.assertEqual(inv_line.taxable_paise, 750000)
+        self.assertIsNone(inv_line.lot)
+
+        # Dispatch the invoice
+        dispatch = dispatch_invoice(invoice, user=self.admin_user)
+        self.assertIsNotNone(dispatch)
+        self.assertEqual(dispatch.status, Dispatch.STATUS_DISPATCHED)
+
+        # Check finished goods stock goes from 238 to 88
+        self.assertEqual(get_balance(self.murukku), Decimal('88'))
+
+        # Check the opening lot (earlier expiry) is consumed first
+        opening_lot_balance = StockMovement.objects.filter(lot=opening_lot).aggregate(
+            total=Sum('qty')
+        )['total']
+        self.assertEqual(opening_lot_balance, Decimal('0'))
+
+        # The rest (100 packets) came from the newer lot
+        prod_lot_balance = StockMovement.objects.filter(lot=prod_lot).aggregate(
+            total=Sum('qty')
+        )['total']
+        self.assertEqual(prod_lot_balance, Decimal('88'))
+
+        # Line lot was saved
+        inv_line.refresh_from_db()
+        self.assertEqual(inv_line.lot, opening_lot)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.STATUS_DISPATCHED)
+
+        # Payment of 400000 leaves outstanding 387500
+        payment = record_payment(
+            invoice=invoice,
+            amount_paise=400000,
+            mode='bank_transfer',
+            reference='TXN123456',
+            user=self.admin_user,
+        )
+        self.assertIsNotNone(payment)
+        self.assertEqual(customer_outstanding(self.retailer_a), 387500)
+
+        # Cancelling an invoice restores stock to 238 and the invoice row still exists
+        credit_note = cancel_invoice(
+            invoice=invoice,
+            reason='Retailer requested order cancellation',
+            user=self.admin_user,
+        )
+        self.assertIsNotNone(credit_note)
+        self.assertEqual(credit_note.total_paise, 787500)
+
+        # Stock restored to 238
+        self.assertEqual(get_balance(self.murukku), Decimal('238'))
+
+        # Invoice row still exists with status cancelled
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.STATUS_CANCELLED)
+        self.assertTrue(Invoice.objects.filter(pk=invoice.pk).exists())
+
+    def test_dispatching_with_not_enough_stock_raises_insufficient_stock_and_changes_nothing(self):
+        """dispatching with not enough stock raises InsufficientStock and changes nothing"""
+        # Murukku opening stock is 50 packets
+        self.assertEqual(get_balance(self.murukku), Decimal('50'))
+
+        # Order 120 packets (shortage of 70 packets)
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.distributor_b,
+            salesman=self.salesman_b,
+            status=Order.STATUS_APPROVED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('120'),
+            price_paise=5000,
+        )
+
+        invoice = create_invoice(order, user=self.admin_user)
+        self.assertEqual(invoice.status, Invoice.STATUS_POSTED)
+        self.assertEqual(order.status, Order.STATUS_INVOICED)
+
+        # Attempt to dispatch must raise InsufficientStock
+        with self.assertRaises(InsufficientStock):
+            dispatch_invoice(invoice, user=self.admin_user)
+
+        # Stock must remain unchanged at 50
+        self.assertEqual(get_balance(self.murukku), Decimal('50'))
+
+        # No dispatch record created
+        self.assertEqual(Dispatch.objects.filter(invoice=invoice).count(), 0)
+
+        # Order status remains invoiced
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.STATUS_INVOICED)
+
+        # Invoice line lot remains None
+        line = invoice.lines.first()
+        self.assertIsNone(line.lot)
+
+    def test_create_invoice_fails_if_order_not_approved(self):
+        """create_invoice only works for orders with status approved"""
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.retailer_a,
+            salesman=self.salesman_a,
+            status=Order.STATUS_SUBMITTED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('10'),
+            price_paise=5000,
+        )
+
+        with self.assertRaises(ValidationError):
+            create_invoice(order, user=self.admin_user)
+
