@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import datetime
 from decimal import Decimal, ROUND_HALF_UP
 import io
@@ -8,15 +8,16 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from django.core.exceptions import PermissionDenied
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Q
 from django.http import HttpResponse
 from django.shortcuts import render
 
 from core.decorators import role_required
-from core.models import CompanySettings
-from production.models import Purchase, PurchaseLine
-from sales.models import Invoice, InvoiceLine
-from sales.utils import format_inr
+from core.ledger import get_balance
+from core.models import CompanySettings, Customer, Item, StockMovement
+from production.models import Purchase, PurchaseLine, ProductionRun
+from sales.models import Invoice, InvoiceLine, Payment
+from sales.utils import format_inr, calculate_customer_ageing
 
 
 def _parse_date(date_str: str | None) -> datetime.date | None:
@@ -127,6 +128,36 @@ def reports_index(request):
             'icon': '🛒',
             'description': 'Itemized raw-material and packaging purchase transactions, supplier details, and procurement totals.',
             'url_name': 'purchase_register',
+        },
+        {
+            'title': 'Stock Summary',
+            'icon': '📦',
+            'description': 'Per-item opening, receipts, issues, adjustments and closing balance — closing verified against the live ledger.',
+            'url_name': 'stock_summary',
+        },
+        {
+            'title': 'Stock Ledger',
+            'icon': '📒',
+            'description': 'Every stock movement with date, item, batch, qty in/out, source document link and user. Filterable by item.',
+            'url_name': 'stock_ledger',
+        },
+        {
+            'title': 'Production Report',
+            'icon': '🏭',
+            'description': 'Planned vs actual consumption, yield, wastage and variance flags per production run.',
+            'url_name': 'production_report',
+        },
+        {
+            'title': 'Collections & Outstanding',
+            'icon': '💰',
+            'description': 'Payments collected in period and outstanding receivables by customer with 0–30, 31–60, 61–90 and 90+ day ageing buckets.',
+            'url_name': 'collections_outstanding',
+        },
+        {
+            'title': 'Owner Dashboard',
+            'icon': '🎯',
+            'description': 'Today\'s orders, stock levels with low-stock alerts, variance alerts, latest cost per packet and total outstanding dues.',
+            'url_name': 'owner_dashboard',
         },
     ]
     return render(request, 'reports/reports_index.html', {'reports': reports_list})
@@ -866,3 +897,469 @@ def purchase_register(request):
         'to_date': to_str,
     }
     return render(request, 'reports/purchase_register.html', context)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Stock Summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+@role_required('accountant', 'admin', 'owner')
+def stock_summary(request):
+    from_date, to_date, from_str, to_str = _get_date_filters(request)
+
+    items = Item.objects.select_related('stock_unit').filter(active=True).order_by('item_type', 'name')
+    rows = []
+    for item in items:
+        if from_date:
+            prev = from_date - datetime.timedelta(days=1)
+            opening = get_balance(item, as_of=prev)
+        else:
+            opening = Decimal('0')
+
+        qs = StockMovement.objects.filter(item=item)
+        if from_date:
+            qs = qs.filter(created_at__date__gte=from_date)
+        if to_date:
+            qs = qs.filter(created_at__date__lte=to_date)
+
+        receipts = Decimal(str(qs.filter(qty__gt=0).aggregate(total=Sum('qty'))['total'] or Decimal('0')))
+        issues_neg = Decimal(str(
+            qs.filter(qty__lt=0, source_type__in=['production', 'dispatch', 'invoice_dispatch'])
+            .aggregate(total=Sum('qty'))['total'] or Decimal('0')
+        ))
+        adj_neg = Decimal(str(
+            qs.exclude(source_type__in=['opening', 'production', 'dispatch', 'invoice_dispatch', 'purchase'])
+            .filter(qty__lt=0).aggregate(total=Sum('qty'))['total'] or Decimal('0')
+        ))
+
+        if from_date:
+            closing_ledger = get_balance(item, as_of=to_date) if to_date else get_balance(item)
+        else:
+            closing_ledger = get_balance(item)
+
+        rows.append({
+            'item': item,
+            'opening': opening,
+            'receipts': receipts,
+            'issues': abs(issues_neg),
+            'adjustments': abs(adj_neg),
+            'closing': closing_ledger,
+            'unit': item.stock_unit.code,
+        })
+
+    export_format = request.GET.get('export', '').lower()
+
+    if export_format == 'csv':
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="stock_summary_{datetime.date.today()}.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Item', 'Type', 'Unit', 'Opening', 'Receipts', 'Issues', 'Adjustments', 'Closing'])
+        for r in rows:
+            writer.writerow([
+                r['item'].name, r['item'].get_item_type_display(), r['unit'],
+                f"{r['opening']:.3f}", f"{r['receipts']:.3f}",
+                f"{r['issues']:.3f}", f"{r['adjustments']:.3f}", f"{r['closing']:.3f}",
+            ])
+        return response
+
+    if export_format == 'excel':
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Stock Summary"
+        headers = ['Item', 'Type', 'Unit', 'Opening', 'Receipts', 'Issues', 'Adjustments', 'Closing']
+        data_rows = [[r['item'].name, r['item'].get_item_type_display(), r['unit'],
+                      float(r['opening']), float(r['receipts']), float(r['issues']),
+                      float(r['adjustments']), float(r['closing'])] for r in rows]
+        _style_excel_sheet(ws, "Stock Summary", headers, data_rows)
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(output.getvalue(),
+                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="stock_summary_{datetime.date.today()}.xlsx"'
+        return response
+
+    return render(request, 'reports/stock_summary.html', {
+        'rows': rows, 'from_date': from_str, 'to_date': to_str,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Stock Ledger
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _source_url(source_type, source_id):
+    try:
+        if source_type == 'production':
+            from django.urls import reverse
+            return reverse('run_detail', args=[source_id])
+        elif source_type in ('dispatch', 'invoice_dispatch'):
+            from sales.models import Dispatch
+            d = Dispatch.objects.filter(pk=source_id).first()
+            if d:
+                from django.urls import reverse
+                return reverse('invoice_detail', args=[d.invoice_id])
+        elif source_type == 'purchase':
+            from django.urls import reverse
+            return reverse('purchase_list')
+    except Exception:
+        pass
+    return None
+
+
+@role_required('accountant', 'admin', 'owner')
+def stock_ledger(request):
+    from_date, to_date, from_str, to_str = _get_date_filters(request)
+    item_id = request.GET.get('item_id', '')
+
+    items = Item.objects.select_related('stock_unit').filter(active=True).order_by('name')
+
+    qs = StockMovement.objects.select_related(
+        'item', 'item__stock_unit', 'lot', 'created_by'
+    ).order_by('created_at', 'id')
+
+    if item_id:
+        qs = qs.filter(item_id=item_id)
+    if from_date:
+        qs = qs.filter(created_at__date__gte=from_date)
+    if to_date:
+        qs = qs.filter(created_at__date__lte=to_date)
+
+    movements = list(qs)
+    for m in movements:
+        m.source_url = _source_url(m.source_type, m.source_id)
+
+    export_format = request.GET.get('export', '').lower()
+
+    if export_format == 'csv':
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="stock_ledger_{datetime.date.today()}.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Date', 'Item', 'Batch', 'Qty In', 'Qty Out', 'Source Type', 'Source ID', 'User'])
+        for m in movements:
+            writer.writerow([
+                m.created_at.date().isoformat(), m.item.name,
+                m.lot.batch_no if m.lot else '',
+                f"{m.qty:.3f}" if m.qty > 0 else '',
+                f"{abs(m.qty):.3f}" if m.qty < 0 else '',
+                m.source_type, m.source_id or '',
+                m.created_by.username if m.created_by else '',
+            ])
+        return response
+
+    if export_format == 'excel':
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Stock Ledger"
+        headers = ['Date', 'Item', 'Unit', 'Batch', 'Qty In', 'Qty Out', 'Source Type', 'User']
+        data_rows = [[
+            m.created_at.date().isoformat(), m.item.name, m.item.stock_unit.code,
+            m.lot.batch_no if m.lot else '',
+            float(m.qty) if m.qty > 0 else '',
+            float(abs(m.qty)) if m.qty < 0 else '',
+            m.source_type, m.created_by.username if m.created_by else '',
+        ] for m in movements]
+        _style_excel_sheet(ws, "Stock Ledger", headers, data_rows)
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(output.getvalue(),
+                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="stock_ledger_{datetime.date.today()}.xlsx"'
+        return response
+
+    return render(request, 'reports/stock_ledger.html', {
+        'movements': movements, 'items': items,
+        'selected_item_id': item_id,
+        'from_date': from_str, 'to_date': to_str, 'count': len(movements),
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Production Report
+# ─────────────────────────────────────────────────────────────────────────────
+
+@role_required('accountant', 'admin', 'owner')
+def production_report(request):
+    from_date, to_date, from_str, to_str = _get_date_filters(request)
+
+    from production.models import ProductionRun
+    qs = ProductionRun.objects.filter(status='posted').select_related(
+        'bom__finished_item', 'created_by'
+    ).prefetch_related('issues__item', 'variance_lines__item').order_by('-run_date', '-id')
+
+    if from_date:
+        qs = qs.filter(run_date__gte=from_date)
+    if to_date:
+        qs = qs.filter(run_date__lte=to_date)
+
+    rows = []
+    for run in qs:
+        expected_yield = run.bom.batch_yield * Decimal(str(run.batches))
+        actual_yield = Decimal(str(run.actual_good_output))
+        wastage = Decimal(str(run.damaged_pouches))
+        variance_lines = list(run.variance_lines.select_related('item').all())
+        rows.append({
+            'run': run,
+            'product': run.bom.finished_item.name,
+            'run_date': run.run_date,
+            'batches': run.batches,
+            'expected_yield': expected_yield,
+            'actual_yield': actual_yield,
+            'wastage': wastage,
+            'yield_variance_percent': run.yield_variance_percent,
+            'yield_flagged': run.yield_flagged,
+            'variance_lines': variance_lines,
+            'material_cost_formatted': format_inr(run.material_cost_paise),
+            'total_cost_formatted': format_inr(run.total_cost_paise),
+            'cost_per_packet_formatted': format_inr(run.cost_per_packet_paise),
+        })
+
+    export_format = request.GET.get('export', '').lower()
+
+    if export_format == 'csv':
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="production_report_{datetime.date.today()}.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Run #', 'Date', 'Product', 'Batches', 'Expected Yield', 'Actual Yield',
+                         'Wastage', 'Yield Variance %', 'Yield Flagged',
+                         'Material Cost (Rs)', 'Total Cost (Rs)', 'Cost/Packet (Rs)'])
+        for r in rows:
+            run = r['run']
+            writer.writerow([
+                f"#{run.pk}", r['run_date'].isoformat(), r['product'], f"{r['batches']:.2f}",
+                f"{r['expected_yield']:.3f}", f"{r['actual_yield']:.3f}", f"{r['wastage']:.3f}",
+                f"{r['yield_variance_percent']:.2f}" if r['yield_variance_percent'] is not None else '',
+                'Yes' if r['yield_flagged'] else 'No',
+                f"{run.material_cost_paise / 100:.2f}", f"{run.total_cost_paise / 100:.2f}",
+                f"{run.cost_per_packet_paise / 100:.2f}",
+            ])
+        return response
+
+    if export_format == 'excel':
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Production Report"
+        headers = ['Run #', 'Date', 'Product', 'Batches', 'Expected Yield', 'Actual Yield',
+                   'Wastage', 'Yield Variance %', 'Yield Flagged',
+                   'Material Cost (Rs)', 'Total Cost (Rs)', 'Cost/Packet (Rs)']
+        data_rows = []
+        for r in rows:
+            run = r['run']
+            data_rows.append([
+                f"#{run.pk}", r['run_date'].isoformat(), r['product'], float(r['batches']),
+                float(r['expected_yield']), float(r['actual_yield']), float(r['wastage']),
+                float(r['yield_variance_percent']) if r['yield_variance_percent'] is not None else '',
+                'Yes' if r['yield_flagged'] else 'No',
+                float(Decimal(run.material_cost_paise) / Decimal(100)),
+                float(Decimal(run.total_cost_paise) / Decimal(100)),
+                float(Decimal(run.cost_per_packet_paise) / Decimal(100)),
+            ])
+        _style_excel_sheet(ws, "Production Report", headers, data_rows)
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(output.getvalue(),
+                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="production_report_{datetime.date.today()}.xlsx"'
+        return response
+
+    return render(request, 'reports/production_report.html', {
+        'rows': rows, 'from_date': from_str, 'to_date': to_str,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Collections & Outstanding
+# ─────────────────────────────────────────────────────────────────────────────
+
+@role_required('accountant', 'admin', 'owner')
+def collections_outstanding(request):
+    from_date, to_date, from_str, to_str = _get_date_filters(request)
+    today = datetime.date.today()
+
+    payments_qs = Payment.objects.select_related('customer', 'invoice').order_by('-date', '-id')
+    if from_date:
+        payments_qs = payments_qs.filter(date__gte=from_date)
+    if to_date:
+        payments_qs = payments_qs.filter(date__lte=to_date)
+    payments = list(payments_qs)
+    total_collected_paise = sum(p.amount_paise for p in payments)
+
+    customers = Customer.objects.filter(invoices__isnull=False).distinct().order_by('name')
+    customer_rows = []
+    grand_total_outstanding = grand_b0_30 = grand_b31_60 = grand_b61_90 = grand_b90_plus = 0
+
+    for customer in customers:
+        ageing = calculate_customer_ageing(customer, today=today)
+        total_outstanding = (ageing['bucket_0_30'] + ageing['bucket_31_60'] +
+                             ageing['bucket_61_90'] + ageing['bucket_90_plus'])
+        if total_outstanding <= 0:
+            continue
+        grand_total_outstanding += total_outstanding
+        grand_b0_30 += ageing['bucket_0_30']
+        grand_b31_60 += ageing['bucket_31_60']
+        grand_b61_90 += ageing['bucket_61_90']
+        grand_b90_plus += ageing['bucket_90_plus']
+        customer_rows.append({
+            'customer': customer,
+            'total_outstanding': total_outstanding,
+            'total_outstanding_formatted': format_inr(total_outstanding),
+            'bucket_0_30': ageing['bucket_0_30'],
+            'bucket_31_60': ageing['bucket_31_60'],
+            'bucket_61_90': ageing['bucket_61_90'],
+            'bucket_90_plus': ageing['bucket_90_plus'],
+            'bucket_0_30_formatted': ageing['bucket_0_30_formatted'],
+            'bucket_31_60_formatted': ageing['bucket_31_60_formatted'],
+            'bucket_61_90_formatted': ageing['bucket_61_90_formatted'],
+            'bucket_90_plus_formatted': ageing['bucket_90_plus_formatted'],
+        })
+
+    export_format = request.GET.get('export', '').lower()
+
+    if export_format == 'csv':
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="collections_outstanding_{datetime.date.today()}.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Collections in Period'])
+        writer.writerow(['Date', 'Customer', 'Invoice', 'Amount (Rs)', 'Mode', 'Reference'])
+        for p in payments:
+            writer.writerow([
+                p.date.isoformat(), p.customer.name,
+                p.invoice.number if p.invoice else '',
+                f"{p.amount_paise / 100:.2f}", p.mode or '', p.reference or '',
+            ])
+        writer.writerow(['Total', '', '', f"{total_collected_paise / 100:.2f}", '', ''])
+        writer.writerow([])
+        writer.writerow(['Outstanding by Customer'])
+        writer.writerow(['Customer', 'Total (Rs)', '0-30 Days', '31-60 Days', '61-90 Days', '90+ Days'])
+        for r in customer_rows:
+            writer.writerow([
+                r['customer'].name,
+                f"{r['total_outstanding'] / 100:.2f}",
+                f"{r['bucket_0_30'] / 100:.2f}", f"{r['bucket_31_60'] / 100:.2f}",
+                f"{r['bucket_61_90'] / 100:.2f}", f"{r['bucket_90_plus'] / 100:.2f}",
+            ])
+        writer.writerow(['Grand Total', f"{grand_total_outstanding / 100:.2f}",
+                         f"{grand_b0_30 / 100:.2f}", f"{grand_b31_60 / 100:.2f}",
+                         f"{grand_b61_90 / 100:.2f}", f"{grand_b90_plus / 100:.2f}"])
+        return response
+
+    if export_format == 'excel':
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = "Collections"
+        c_headers = ['Date', 'Customer', 'Invoice', 'Amount (Rs)', 'Mode', 'Reference']
+        c_rows = [[p.date.isoformat(), p.customer.name, p.invoice.number if p.invoice else '',
+                   float(Decimal(p.amount_paise) / Decimal(100)), p.mode or '', p.reference or '']
+                  for p in payments]
+        _style_excel_sheet(ws1, "Collections", c_headers, c_rows,
+                           ['Total', '', '', float(Decimal(total_collected_paise) / Decimal(100)), '', ''])
+        ws2 = wb.create_sheet("Outstanding")
+        o_headers = ['Customer', 'Total Outstanding (Rs)', '0-30 Days', '31-60 Days', '61-90 Days', '90+ Days']
+        o_rows = [[r['customer'].name,
+                   float(Decimal(r['total_outstanding']) / Decimal(100)),
+                   float(Decimal(r['bucket_0_30']) / Decimal(100)),
+                   float(Decimal(r['bucket_31_60']) / Decimal(100)),
+                   float(Decimal(r['bucket_61_90']) / Decimal(100)),
+                   float(Decimal(r['bucket_90_plus']) / Decimal(100))] for r in customer_rows]
+        _style_excel_sheet(ws2, "Outstanding by Customer", o_headers, o_rows,
+                           ['Grand Total',
+                            float(Decimal(grand_total_outstanding) / Decimal(100)),
+                            float(Decimal(grand_b0_30) / Decimal(100)),
+                            float(Decimal(grand_b31_60) / Decimal(100)),
+                            float(Decimal(grand_b61_90) / Decimal(100)),
+                            float(Decimal(grand_b90_plus) / Decimal(100))])
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(output.getvalue(),
+                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="collections_outstanding_{datetime.date.today()}.xlsx"'
+        return response
+
+    return render(request, 'reports/collections_outstanding.html', {
+        'payments': payments,
+        'total_collected_paise': total_collected_paise,
+        'total_collected_formatted': format_inr(total_collected_paise),
+        'customer_rows': customer_rows,
+        'grand_total_outstanding': grand_total_outstanding,
+        'grand_total_outstanding_formatted': format_inr(grand_total_outstanding),
+        'grand_b0_30': grand_b0_30, 'grand_b31_60': grand_b31_60,
+        'grand_b61_90': grand_b61_90, 'grand_b90_plus': grand_b90_plus,
+        'grand_b0_30_formatted': format_inr(grand_b0_30),
+        'grand_b31_60_formatted': format_inr(grand_b31_60),
+        'grand_b61_90_formatted': format_inr(grand_b61_90),
+        'grand_b90_plus_formatted': format_inr(grand_b90_plus),
+        'from_date': from_str, 'to_date': to_str,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. Owner Dashboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+@role_required('owner', 'admin')
+def owner_dashboard(request):
+    today = datetime.date.today()
+
+    from sales.models import Order
+    todays_orders = Order.objects.filter(
+        created_at__date=today
+    ).select_related('customer', 'salesman').order_by('-created_at')
+    todays_orders_count = todays_orders.count()
+
+    finished_items = Item.objects.filter(item_type='finished', active=True).select_related('stock_unit')
+    finished_stock = []
+    for item in finished_items:
+        balance = get_balance(item)
+        low = item.reorder_level is not None and balance <= item.reorder_level
+        finished_stock.append({'item': item, 'balance': balance, 'low_stock': low, 'unit': item.stock_unit.code})
+
+    raw_items = Item.objects.filter(item_type__in=['raw', 'packaging'], active=True).select_related('stock_unit')
+    raw_stock = []
+    for item in raw_items:
+        balance = get_balance(item)
+        low = item.reorder_level is not None and balance <= item.reorder_level
+        raw_stock.append({'item': item, 'balance': balance, 'low_stock': low, 'unit': item.stock_unit.code})
+
+    from production.models import ProductionRun
+    flagged_runs = ProductionRun.objects.filter(
+        status='posted', yield_flagged=True
+    ).select_related('bom__finished_item').order_by('-run_date', '-id')[:10]
+
+    latest_costs = []
+    seen_items = set()
+    for run in ProductionRun.objects.filter(status='posted').select_related(
+        'bom__finished_item'
+    ).order_by('-run_date', '-id'):
+        iid = run.bom.finished_item_id
+        if iid not in seen_items:
+            seen_items.add(iid)
+            latest_costs.append({
+                'product': run.bom.finished_item.name,
+                'cost_per_packet_formatted': format_inr(run.cost_per_packet_paise),
+                'selling_price_formatted': format_inr(run.selling_price_paise),
+                'margin_formatted': format_inr(run.margin_paise),
+                'margin_percent': run.margin_percent,
+                'run_date': run.run_date,
+            })
+
+    all_customers = Customer.objects.filter(invoices__isnull=False).distinct()
+    total_outstanding_paise = 0
+    for customer in all_customers:
+        ageing = calculate_customer_ageing(customer, today=today)
+        total_outstanding_paise += (ageing['bucket_0_30'] + ageing['bucket_31_60'] +
+                                    ageing['bucket_61_90'] + ageing['bucket_90_plus'])
+
+    return render(request, 'reports/owner_dashboard.html', {
+        'today': today,
+        'todays_orders': todays_orders,
+        'todays_orders_count': todays_orders_count,
+        'finished_stock': finished_stock,
+        'raw_stock': raw_stock,
+        'flagged_runs': flagged_runs,
+        'latest_costs': latest_costs,
+        'total_outstanding_paise': total_outstanding_paise,
+        'total_outstanding_formatted': format_inr(total_outstanding_paise),
+    })

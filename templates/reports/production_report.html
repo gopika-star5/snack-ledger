@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% load reports_tags %}
+
+{% block title %}Production Report{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Blue Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <a href="{% url 'reports_index' %}" class="inline-flex items-center text-blue-200 hover:text-white text-xs font-semibold uppercase tracking-wider mb-2 transition">
+                    &larr; Back to Reports Center
+                </a>
+                <h1 class="text-2xl md:text-3xl font-extrabold">Production Report</h1>
+                <p class="text-blue-100 text-sm mt-1">Planned vs actual consumption, yield, wastage and variance flags per run.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}&export=csv" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📥</span><span>Download CSV</span>
+                </a>
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}&export=excel" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📊</span><span>Download Excel</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Date Filter Card -->
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <form method="get" class="flex flex-wrap items-end gap-4">
+            <div>
+                <label for="from_date" class="block text-xs font-semibold text-slate-600 mb-1">From Date</label>
+                <input type="date" id="from_date" name="from_date" value="{{ from_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="to_date" class="block text-xs font-semibold text-slate-600 mb-1">To Date</label>
+                <input type="date" id="to_date" name="to_date" value="{{ to_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg text-sm transition shadow-sm">Filter</button>
+                {% if from_date or to_date %}
+                <a href="{% url 'production_report' %}" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-lg text-sm transition">Clear</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Runs -->
+    {% for r in rows %}
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <!-- Run Header -->
+        <div class="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2">
+            <div class="flex items-center gap-3">
+                <span class="font-bold text-slate-800">Run #{{ r.run.pk }}</span>
+                <span class="text-slate-500 text-sm">{{ r.run_date }}</span>
+                <span class="text-slate-600 font-medium">{{ r.product }}</span>
+                <span class="text-xs text-slate-400">{{ r.batches }} batch(es)</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+                {% if r.yield_flagged %}
+                <span class="bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full font-semibold uppercase">⚠ Yield Flagged</span>
+                {% else %}
+                <span class="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-semibold uppercase">✓ Yield OK</span>
+                {% endif %}
+                <a href="{% url 'run_detail' r.run.pk %}" class="text-blue-600 hover:underline font-medium">View Run &rarr;</a>
+            </div>
+        </div>
+
+        <!-- Yield Summary -->
+        <div class="p-4 grid grid-cols-2 md:grid-cols-4 gap-4 border-b border-slate-100">
+            <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wider">Expected Yield</p>
+                <p class="font-bold text-slate-800 text-lg">{{ r.expected_yield }} pkt</p>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wider">Actual Yield</p>
+                <p class="font-bold text-slate-800 text-lg">{{ r.actual_yield }} pkt</p>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wider">Wastage (damaged)</p>
+                <p class="font-bold text-amber-600 text-lg">{{ r.wastage }} pkt</p>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wider">Yield Variance</p>
+                <p class="font-bold {% if r.yield_flagged %}text-rose-600{% else %}text-slate-800{% endif %} text-lg">
+                    {{ r.yield_variance_percent }}%
+                </p>
+            </div>
+        </div>
+
+        <!-- Material Variance Table -->
+        {% if r.variance_lines %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                    <tr>
+                        <th class="px-4 py-3">Material</th>
+                        <th class="px-4 py-3 text-right">Planned</th>
+                        <th class="px-4 py-3 text-right">Actual</th>
+                        <th class="px-4 py-3 text-right">Variance Qty</th>
+                        <th class="px-4 py-3 text-right">Variance %</th>
+                        <th class="px-4 py-3 text-center">Direction</th>
+                        <th class="px-4 py-3 text-center">Flag</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for vl in r.variance_lines %}
+                    <tr class="hover:bg-blue-50/50 transition {% if vl.flagged %}bg-rose-50/30{% endif %}">
+                        <td class="px-4 py-3 font-medium text-slate-800">{{ vl.item.name }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ vl.planned_qty }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-800">{{ vl.actual_qty }}</td>
+                        <td class="px-4 py-3 text-right font-mono {% if vl.variance_qty > 0 %}text-rose-600{% else %}text-emerald-600{% endif %}">
+                            {% if vl.variance_qty > 0 %}+{% endif %}{{ vl.variance_qty }}
+                        </td>
+                        <td class="px-4 py-3 text-right font-mono {% if vl.flagged %}text-rose-700 font-bold{% else %}text-slate-600{% endif %}">
+                            {% if vl.variance_percent > 0 %}+{% endif %}{{ vl.variance_percent }}%
+                        </td>
+                        <td class="px-4 py-3 text-center text-xs">
+                            {% if vl.direction == 'adverse' %}
+                            <span class="bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-semibold">Adverse</span>
+                            {% else %}
+                            <span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">Favourable</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-center text-xs">
+                            {% if vl.flagged %}
+                            <span class="bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full font-bold">⚠ Flagged</span>
+                            {% else %}
+                            <span class="text-slate-400">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Cost Summary -->
+        <div class="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap gap-6 text-sm">
+            <div><span class="text-slate-500">Material Cost:</span> <span class="font-bold text-slate-800 ml-1">{{ r.material_cost_formatted }}</span></div>
+            <div><span class="text-slate-500">Total Cost:</span> <span class="font-bold text-slate-800 ml-1">{{ r.total_cost_formatted }}</span></div>
+            <div><span class="text-slate-500">Cost/Packet:</span> <span class="font-bold text-blue-700 ml-1">{{ r.cost_per_packet_formatted }}</span></div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-10 text-center text-slate-400">
+        No posted production runs found for the selected period.
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

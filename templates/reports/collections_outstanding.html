@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% load reports_tags %}
+
+{% block title %}Collections & Outstanding{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Blue Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <a href="{% url 'reports_index' %}" class="inline-flex items-center text-blue-200 hover:text-white text-xs font-semibold uppercase tracking-wider mb-2 transition">
+                    &larr; Back to Reports Center
+                </a>
+                <h1 class="text-2xl md:text-3xl font-extrabold">Collections &amp; Outstanding</h1>
+                <p class="text-blue-100 text-sm mt-1">Payments received in period and outstanding receivables with ageing buckets.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}&export=csv" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📥</span><span>Download CSV</span>
+                </a>
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}&export=excel" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📊</span><span>Download Excel</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Date Filter Card -->
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <form method="get" class="flex flex-wrap items-end gap-4">
+            <div>
+                <label for="from_date" class="block text-xs font-semibold text-slate-600 mb-1">Collections From</label>
+                <input type="date" id="from_date" name="from_date" value="{{ from_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="to_date" class="block text-xs font-semibold text-slate-600 mb-1">Collections To</label>
+                <input type="date" id="to_date" name="to_date" value="{{ to_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg text-sm transition shadow-sm">Filter</button>
+                {% if from_date or to_date %}
+                <a href="{% url 'collections_outstanding' %}" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-lg text-sm transition">Clear</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Summary Stat Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Collected (Period)</p>
+            <p class="text-2xl font-extrabold text-emerald-700">{{ total_collected_formatted }}</p>
+            <p class="text-xs text-slate-400 mt-1">{{ payments|length }} payment(s)</p>
+        </div>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Outstanding (All Time)</p>
+            <p class="text-2xl font-extrabold text-rose-600">{{ grand_total_outstanding_formatted }}</p>
+            <p class="text-xs text-slate-400 mt-1">{{ customer_rows|length }} customer(s) with balance</p>
+        </div>
+    </div>
+
+    <!-- Collections Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-4 bg-slate-50 border-b border-slate-200">
+            <span class="font-bold text-slate-700 text-sm">Payments Received</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                    <tr>
+                        <th class="px-4 py-3">Date</th>
+                        <th class="px-4 py-3">Customer</th>
+                        <th class="px-4 py-3">Invoice</th>
+                        <th class="px-4 py-3 text-right">Amount</th>
+                        <th class="px-4 py-3">Mode</th>
+                        <th class="px-4 py-3">Reference</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for p in payments %}
+                    <tr class="hover:bg-blue-50/50 transition">
+                        <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ p.date }}</td>
+                        <td class="px-4 py-3 font-medium text-slate-800">{{ p.customer.name }}</td>
+                        <td class="px-4 py-3 font-mono text-xs text-blue-600">
+                            {% if p.invoice %}
+                            <a href="{% url 'invoice_detail' p.invoice.id %}" class="hover:underline">{{ p.invoice.number }}</a>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-right font-mono font-bold text-emerald-700">{{ p.amount_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-xs text-slate-500">{{ p.mode|default:"—" }}</td>
+                        <td class="px-4 py-3 text-xs text-slate-500">{{ p.reference|default:"—" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="px-4 py-10 text-center text-slate-400">No payments for the selected period.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if payments %}
+                <tfoot class="bg-slate-100 font-bold border-t-2 border-slate-200 text-slate-800">
+                    <tr>
+                        <td colspan="3" class="px-4 py-3">Total ({{ payments|length }} payments)</td>
+                        <td class="px-4 py-3 text-right font-mono font-extrabold text-blue-900">{{ total_collected_formatted }}</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <!-- Outstanding Ageing Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-4 bg-slate-50 border-b border-slate-200">
+            <span class="font-bold text-slate-700 text-sm">Outstanding by Customer — Ageing Buckets (All Time)</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                    <tr>
+                        <th class="px-4 py-3">Customer</th>
+                        <th class="px-4 py-3 text-right font-bold text-slate-900">Total Outstanding</th>
+                        <th class="px-4 py-3 text-right">0–30 Days</th>
+                        <th class="px-4 py-3 text-right">31–60 Days</th>
+                        <th class="px-4 py-3 text-right">61–90 Days</th>
+                        <th class="px-4 py-3 text-right text-rose-700">90+ Days</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for r in customer_rows %}
+                    <tr class="hover:bg-blue-50/50 transition">
+                        <td class="px-4 py-3 font-medium text-slate-800">{{ r.customer.name }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-bold text-slate-900">{{ r.total_outstanding_formatted }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ r.bucket_0_30_formatted }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-amber-600">{{ r.bucket_31_60_formatted }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-orange-600">{{ r.bucket_61_90_formatted }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-bold text-rose-700">{{ r.bucket_90_plus_formatted }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="px-4 py-10 text-center text-slate-400">No outstanding dues.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if customer_rows %}
+                <tfoot class="bg-slate-100 font-bold border-t-2 border-slate-200 text-slate-800">
+                    <tr>
+                        <td class="px-4 py-3">Grand Total</td>
+                        <td class="px-4 py-3 text-right font-mono font-extrabold text-blue-900">{{ grand_total_outstanding_formatted }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ grand_b0_30_formatted }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ grand_b31_60_formatted }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ grand_b61_90_formatted }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-rose-700">{{ grand_b90_plus_formatted }}</td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

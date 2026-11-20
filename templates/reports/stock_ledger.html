@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load reports_tags %}
+
+{% block title %}Stock Ledger{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Blue Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <a href="{% url 'reports_index' %}" class="inline-flex items-center text-blue-200 hover:text-white text-xs font-semibold uppercase tracking-wider mb-2 transition">
+                    &larr; Back to Reports Center
+                </a>
+                <h1 class="text-2xl md:text-3xl font-extrabold">Stock Ledger</h1>
+                <p class="text-blue-100 text-sm mt-1">Every stock movement with source document, batch and user. Filterable by item.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}{% if selected_item_id %}&item_id={{ selected_item_id }}{% endif %}&export=csv" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📥</span><span>Download CSV</span>
+                </a>
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}{% if selected_item_id %}&item_id={{ selected_item_id }}{% endif %}&export=excel" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📊</span><span>Download Excel</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Card -->
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <form method="get" class="flex flex-wrap items-end gap-4">
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Item</label>
+                <select name="item_id" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">All Items</option>
+                    {% for item in items %}
+                    <option value="{{ item.id }}" {% if selected_item_id == item.id|stringformat:"s" %}selected{% endif %}>{{ item.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="from_date" class="block text-xs font-semibold text-slate-600 mb-1">From Date</label>
+                <input type="date" id="from_date" name="from_date" value="{{ from_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="to_date" class="block text-xs font-semibold text-slate-600 mb-1">To Date</label>
+                <input type="date" id="to_date" name="to_date" value="{{ to_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg text-sm transition shadow-sm">Filter</button>
+                <a href="{% url 'stock_ledger' %}" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-lg text-sm transition">Clear</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Results Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <span class="font-bold text-slate-700 text-sm">Movements ({{ count }})</span>
+            <span class="text-xs text-slate-500">Positive = In &bull; Negative = Out</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                    <tr>
+                        <th class="px-4 py-3">Date</th>
+                        <th class="px-4 py-3">Item</th>
+                        <th class="px-4 py-3">Batch</th>
+                        <th class="px-4 py-3 text-right text-emerald-700">Qty In</th>
+                        <th class="px-4 py-3 text-right text-rose-700">Qty Out</th>
+                        <th class="px-4 py-3">Source</th>
+                        <th class="px-4 py-3">User</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for m in movements %}
+                    <tr class="hover:bg-blue-50/50 transition">
+                        <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ m.created_at|date:"Y-m-d" }}</td>
+                        <td class="px-4 py-3 font-medium text-slate-800">{{ m.item.name }}</td>
+                        <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ m.lot.batch_no|default:"—" }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-emerald-700">
+                            {% if m.qty > 0 %}{{ m.qty }}{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-right font-mono text-rose-700">
+                            {% if m.qty < 0 %}{{ m.qty|stringformat:".3f"|slice:"1:" }}{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-xs">
+                            {% if m.source_url %}
+                            <a href="{{ m.source_url }}" class="text-blue-600 hover:underline font-medium">{{ m.source_type }}</a>
+                            {% else %}
+                            <span class="text-slate-500">{{ m.source_type }}</span>
+                            {% endif %}
+                            {% if m.source_id %}
+                            <span class="text-slate-400 ml-1">#{{ m.source_id }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-slate-500 text-xs">{{ m.created_by.username|default:"—" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-4 py-10 text-center text-slate-400">No movements found for the selected filters.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
