@@ -224,15 +224,70 @@
                     <span>Reject Order</span>
                 </button>
 
-                <button type="submit"
-                        name="action"
-                        value="approve"
-                        class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-extrabold py-3.5 px-8 rounded-xl shadow-md hover:shadow-lg transition text-base flex items-center justify-center space-x-2">
-                    <span>✓</span>
-                    <span>Approve Order</span>
-                </button>
+                <div class="flex flex-wrap items-center gap-3">
+                    <button type="submit"
+                            name="action"
+                            value="approve"
+                            class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-extrabold py-3.5 px-8 rounded-xl shadow-md hover:shadow-lg transition text-base flex items-center justify-center space-x-2">
+                        <span>✓</span>
+                        <span>Approve Order</span>
+                    </button>
+                    {% if order.status == 'approved' %}
+                    <button type="submit"
+                            name="action"
+                            value="create_invoice"
+                            formaction="{% url 'create_invoice' order.pk %}"
+                            class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-extrabold py-3.5 px-8 rounded-xl shadow-md hover:shadow-lg transition text-base flex items-center justify-center space-x-2">
+                        <span>🧾</span>
+                        <span>Create Invoice</span>
+                    </button>
+                    {% endif %}
+                </div>
             </div>
         </div>
+
+        {% if order.status == 'approved' %}
+        <div class="bg-blue-50 border-2 border-blue-200 rounded-2xl shadow-sm p-5 md:p-6 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <span class="bg-blue-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full tracking-wider">
+                        Approved Order
+                    </span>
+                    <h3 class="text-base font-extrabold text-blue-900 mt-1">Ready for GST Invoicing</h3>
+                    <p class="text-xs text-blue-700 mt-0.5">Order verified. Generate the tax invoice to calculate GST and prepare for dispatch.</p>
+                </div>
+                <div>
+                    <button type="submit"
+                            name="action"
+                            value="create_invoice"
+                            formaction="{% url 'create_invoice' order.pk %}"
+                            class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-extrabold py-3.5 px-8 rounded-xl shadow-md hover:shadow-lg transition text-base flex items-center justify-center space-x-2">
+                        <span>🧾</span>
+                        <span>Create Invoice</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% elif order.status == 'invoiced' and order.invoices.exists %}
+        <div class="bg-indigo-50 border-2 border-indigo-200 rounded-2xl shadow-sm p-5 md:p-6 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <span class="bg-indigo-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full tracking-wider">
+                        Invoiced
+                    </span>
+                    <h3 class="text-base font-extrabold text-indigo-900 mt-1">Invoice Generated</h3>
+                    <p class="text-xs text-indigo-700 mt-0.5">Tax invoice <strong>{{ order.invoices.first.number }}</strong> was generated for this order.</p>
+                </div>
+                <div>
+                    <a href="{% url 'invoice_detail' order.invoices.first.pk %}"
+                       class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3.5 px-6 rounded-xl shadow-md hover:shadow-lg transition text-sm flex items-center justify-center space-x-2">
+                        <span>🧾</span>
+                        <span>View Invoice</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </form>
 
     <!-- Back Link -->

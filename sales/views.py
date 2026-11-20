@@ -5,12 +5,17 @@ from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
+from weasyprint import HTML
 
 from core.decorators import role_required
-from core.ledger import get_balance
-from core.models import Customer, Item, AuditLog
-from .models import Order, OrderLine
+from core.ledger import InsufficientStock, get_balance
+from core.models import Customer, Item, AuditLog, CompanySettings
+from .models import Order, OrderLine, Invoice, InvoiceLine, Dispatch, CreditNote
+from .services import create_invoice, dispatch_invoice, cancel_invoice
+from .utils import format_inr, amount_to_words_inr, get_whatsapp_invoice_url
 
 
 @role_required('salesman')
@@ -359,6 +364,15 @@ def admin_order_detail(request, pk):
                 messages.warning(request, f"Order #{order.pk} rejected.")
                 return redirect('admin_order_detail', pk=order.pk)
 
+            elif action in ['create_invoice', 'invoice']:
+                try:
+                    invoice = create_invoice(order, request.user)
+                    messages.success(request, f"Invoice {invoice.number} created successfully.")
+                    return redirect('invoice_detail', pk=invoice.pk)
+                except Exception as e:
+                    messages.error(request, str(e))
+                    return redirect('admin_order_detail', pk=order.pk)
+
             elif changes or action in ['edit', 'save', 'update']:
                 messages.success(request, f"Order #{order.pk} updated successfully.")
                 return redirect('admin_order_detail', pk=order.pk)
@@ -535,3 +549,165 @@ def _parse_admin_line_edits(request, lines):
         results[lid] = {'qty': q_dec, 'price_paise': p_int}
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Invoice & Dispatch Admin Views (Role: admin, owner)
+# ---------------------------------------------------------------------------
+
+@role_required('admin', 'owner')
+def invoice_list(request):
+    """
+    Invoices list page showing number, customer, date, total, and status.
+    """
+    invoices = (
+        Invoice.objects.select_related('customer', 'order')
+        .prefetch_related('dispatches', 'credit_notes')
+        .order_by('-date', '-id')
+    )
+    context = {
+        'invoices': invoices,
+    }
+    return render(request, 'sales/invoice_list.html', context)
+
+
+@role_required('admin', 'owner')
+def create_invoice_from_order(request, pk):
+    """
+    Create an invoice from an approved order and open the invoice page.
+    """
+    order = get_object_or_404(Order, pk=pk)
+    if order.status != Order.STATUS_APPROVED:
+        if order.invoices.exists():
+            return redirect('invoice_detail', pk=order.invoices.first().pk)
+        messages.error(
+            request,
+            f"Cannot create invoice: Order #{order.pk} status is '{order.get_status_display()}'. Only approved orders can be invoiced."
+        )
+        return redirect('admin_order_detail', pk=order.pk)
+
+    try:
+        invoice = create_invoice(order, request.user)
+        messages.success(request, f"Invoice {invoice.number} created successfully.")
+        return redirect('invoice_detail', pk=invoice.pk)
+    except Exception as e:
+        messages.error(request, f"Could not create invoice: {e}")
+        return redirect('admin_order_detail', pk=order.pk)
+
+
+@role_required('admin', 'owner')
+def invoice_detail(request, pk):
+    """
+    Invoice detail page: shows invoice number, date, customer with GSTIN,
+    lines (item, HSN, qty, rate, taxable), CGST+SGST or IGST, total in rupees,
+    and buttons: Download PDF, Dispatch, Cancel Invoice.
+    """
+    invoice = get_object_or_404(
+        Invoice.objects.select_related('customer', 'order')
+        .prefetch_related('lines__item', 'lines__item__stock_unit', 'dispatches', 'credit_notes'),
+        pk=pk,
+    )
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'dispatch':
+            return _execute_dispatch(request, invoice)
+        elif action == 'cancel':
+            return _execute_cancel(request, invoice)
+
+    company = CompanySettings.get()
+    is_intra = (invoice.place_of_supply or "").strip().lower() == (company.state or "Tamil Nadu").strip().lower()
+    wa_url = get_whatsapp_invoice_url(invoice)
+
+    context = {
+        'invoice': invoice,
+        'company': company,
+        'lines': invoice.lines.select_related('item', 'item__stock_unit', 'lot').all(),
+        'is_intra_state': is_intra,
+        'amount_in_words': invoice.amount_in_words,
+        'wa_url': wa_url,
+    }
+    return render(request, 'sales/invoice_detail.html', context)
+
+
+def _execute_dispatch(request, invoice):
+    try:
+        dispatch = dispatch_invoice(invoice, request.user)
+        messages.success(request, f"Invoice {invoice.number} dispatched successfully. Finished goods inventory updated.")
+    except InsufficientStock as e:
+        messages.error(
+            request,
+            f"Stock Shortage Error: Insufficient finished goods stock to dispatch {invoice.number} ({e}). Stock and invoice remain unchanged."
+        )
+    except Exception as e:
+        msg = e.message if hasattr(e, 'message') else str(e)
+        messages.error(request, f"Cannot dispatch invoice: {msg}")
+    return redirect('invoice_detail', pk=invoice.pk)
+
+
+def _execute_cancel(request, invoice):
+    reason = (
+        request.POST.get('reason')
+        or request.POST.get('rejection_reason')
+        or 'Cancelled by admin'
+    ).strip()
+    try:
+        cn = cancel_invoice(invoice, reason=reason, user=request.user)
+        messages.warning(request, f"Invoice {invoice.number} has been cancelled. Credit Note {cn.number} issued.")
+    except Exception as e:
+        msg = e.message if hasattr(e, 'message') else str(e)
+        messages.error(request, f"Cannot cancel invoice: {msg}")
+    return redirect('invoice_detail', pk=invoice.pk)
+
+
+@role_required('admin', 'owner')
+def invoice_dispatch(request, pk):
+    """
+    Dispatch button endpoint: calls dispatch_invoice;
+    shows clear red message if stock is not enough and changes nothing.
+    """
+    invoice = get_object_or_404(Invoice, pk=pk)
+    return _execute_dispatch(request, invoice)
+
+
+@role_required('admin', 'owner')
+def invoice_cancel(request, pk):
+    """
+    Cancel invoice endpoint: calls cancel_invoice; issues credit note.
+    """
+    invoice = get_object_or_404(Invoice, pk=pk)
+    return _execute_cancel(request, invoice)
+
+
+@role_required('admin', 'owner')
+def invoice_pdf(request, pk):
+    """
+    Invoice PDF via WeasyPrint from HTML template.
+    Shows company name and GSTIN, customer GSTIN, invoice number and date,
+    HSN, taxable value, CGST/SGST or IGST, total, and amount in words.
+    """
+    invoice = get_object_or_404(
+        Invoice.objects.select_related('customer', 'order')
+        .prefetch_related('lines__item', 'lines__item__stock_unit'),
+        pk=pk,
+    )
+    company = CompanySettings.get()
+    is_intra = (invoice.place_of_supply or "").strip().lower() == (company.state or "Tamil Nadu").strip().lower()
+    wa_url = get_whatsapp_invoice_url(invoice)
+
+    context = {
+        'invoice': invoice,
+        'company': company,
+        'lines': invoice.lines.select_related('item', 'item__stock_unit', 'lot').all(),
+        'is_intra_state': is_intra,
+        'amount_in_words': invoice.amount_in_words,
+        'wa_url': wa_url,
+    }
+
+    html_string = render_to_string('sales/invoice_pdf.html', context, request=request)
+    pdf_bytes = HTML(string=html_string, base_url=request.build_absolute_uri('/')).write_pdf()
+
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    clean_num = invoice.number.replace('/', '-')
+    response['Content-Disposition'] = f'inline; filename="Invoice-{clean_num}.pdf"'
+    return response

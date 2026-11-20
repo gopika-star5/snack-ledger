@@ -72,6 +72,11 @@ class Order(models.Model):
         return f"{self.total_paise / 100:.2f}"
 
     @property
+    def total_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.total_paise)
+
+    @property
     def total_items_qty(self) -> Decimal:
         return sum((line.qty for line in self.lines.all()), Decimal('0'))
 
@@ -104,6 +109,11 @@ class OrderLine(models.Model):
     @property
     def total_rupees(self) -> str:
         return f"{self.total_paise / 100:.2f}"
+
+    @property
+    def total_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.total_paise)
 
     @property
     def price_rupees(self) -> str:
@@ -155,6 +165,50 @@ class Invoice(models.Model):
         return f"{self.total_paise / 100:.2f}"
 
     @property
+    def total_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.total_paise)
+
+    @property
+    def total_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.total_paise)
+
+    @property
+    def taxable_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.taxable_paise)
+
+    @property
+    def cgst_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.cgst_paise)
+
+    @property
+    def sgst_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.sgst_paise)
+
+    @property
+    def igst_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.igst_paise)
+
+    @property
+    def amount_in_words(self) -> str:
+        from sales.utils import amount_to_words_inr
+        return amount_to_words_inr(self.total_paise)
+
+    @property
+    def whatsapp_url(self) -> str:
+        from sales.utils import get_whatsapp_invoice_url
+        return get_whatsapp_invoice_url(self)
+
+    @property
+    def is_dispatched(self) -> bool:
+        return self.dispatches.filter(status='dispatched').exists()
+
+    @property
     def dispatch(self):
         return self.dispatches.first()
 
@@ -189,6 +243,16 @@ class InvoiceLine(models.Model):
     @property
     def total_paise(self) -> int:
         return int(self.taxable_paise)
+
+    @property
+    def rate_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.rate_paise)
+
+    @property
+    def taxable_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.taxable_paise)
 
 
 class Dispatch(models.Model):
@@ -263,6 +327,11 @@ class CreditNote(models.Model):
     @property
     def total_rupees(self) -> str:
         return f"{self.total_paise / 100:.2f}"
+
+    @property
+    def total_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.total_paise)
 
 
 class InvoiceSequence(models.Model):

@@ -360,6 +360,16 @@ class SalesInvoiceBillingTests(TestCase):
         self.distributor_b = Customer.objects.get(name='Distributor B')
         self.murukku = Item.objects.get(name='Murukku 200 g')
 
+        self.client_a = Client()
+        self.client_a.login(username='salesman_a', password='demo1234')
+
+        self.admin_client = Client()
+        self.admin_client.login(username='admin1', password='demo1234')
+
+        self.owner_user = User.objects.get(username='owner1')
+        self.owner_client = Client()
+        self.owner_client.login(username='owner1', password='demo1234')
+
     def test_tax_calculation_intra_state_retailer_a(self):
         """Retailer A, 150 packets at 5000 paise gives taxable 750000, CGST 18750, SGST 18750, total 787500"""
         taxable_paise = 150 * 5000  # 750000
@@ -584,4 +594,150 @@ class SalesInvoiceBillingTests(TestCase):
 
         with self.assertRaises(ValidationError):
             create_invoice(order, user=self.admin_user)
+
+    def test_create_invoice_from_approved_150_packet_order_shows_7875(self):
+        """create an invoice from an approved 150 packet order and the page shows ₹7,875.00"""
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.retailer_a,
+            salesman=self.salesman_a,
+            status=Order.STATUS_APPROVED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('150'),
+            price_paise=5000,
+        )
+
+        # Admin order detail page shows "Create Invoice" button for approved order
+        response_order = self.admin_client.get(reverse('admin_order_detail', args=[order.pk]))
+        self.assertEqual(response_order.status_code, 200)
+        self.assertContains(response_order, "Create Invoice")
+
+        # Create invoice via POST
+        create_resp = self.admin_client.post(reverse('create_invoice', args=[order.pk]), follow=True)
+        self.assertEqual(create_resp.status_code, 200)
+
+        invoice = Invoice.objects.filter(order=order).first()
+        self.assertIsNotNone(invoice)
+        self.assertEqual(invoice.total_paise, 787500)
+
+        # Invoice page shows ₹7,875.00 and all required elements
+        inv_resp = self.admin_client.get(reverse('invoice_detail', args=[invoice.pk]))
+        self.assertEqual(inv_resp.status_code, 200)
+        self.assertContains(inv_resp, "₹7,875.00")
+        self.assertContains(inv_resp, invoice.number)
+        self.assertContains(inv_resp, "33AAAAA0000A1Z5")  # Retailer A GSTIN
+        self.assertContains(inv_resp, "Download PDF")
+        self.assertContains(inv_resp, "Dispatch")
+        self.assertContains(inv_resp, "Cancel Invoice")
+        self.assertContains(inv_resp, "wa.me")  # WhatsApp share link
+
+    def test_invoice_pdf_download_returns_status_200_with_pdf_content_type(self):
+        """the PDF download returns status 200 with content type application/pdf"""
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.retailer_a,
+            salesman=self.salesman_a,
+            status=Order.STATUS_APPROVED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('150'),
+            price_paise=5000,
+        )
+        invoice = create_invoice(order, user=self.admin_user)
+
+        pdf_resp = self.admin_client.get(reverse('invoice_pdf', args=[invoice.pk]))
+        self.assertEqual(pdf_resp.status_code, 200)
+        self.assertEqual(pdf_resp['Content-Type'], 'application/pdf')
+        self.assertTrue(pdf_resp.content.startswith(b'%PDF'))
+
+    def test_dispatch_reduces_finished_goods_stock_from_238_to_88(self):
+        """dispatch reduces finished goods stock from 238 to 88"""
+        # Starting murukku stock is 50; receive 188 to bring total to 238
+        receive_stock(
+            item=self.murukku,
+            qty=Decimal('188'),
+            unit_cost_paise=3000,
+            source_type='production',
+            source_id='run_1',
+            user=self.admin_user,
+        )
+        self.assertEqual(get_balance(self.murukku), Decimal('238'))
+
+        # Create approved order for 150 packets and invoice it
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.retailer_a,
+            salesman=self.salesman_a,
+            status=Order.STATUS_APPROVED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('150'),
+            price_paise=5000,
+        )
+        invoice = create_invoice(order, user=self.admin_user)
+
+        # Dispatch via POST to invoice_dispatch
+        dispatch_resp = self.admin_client.post(reverse('invoice_dispatch', args=[invoice.pk]), follow=True)
+        self.assertEqual(dispatch_resp.status_code, 200)
+
+        # Stock is reduced from 238 to 88
+        self.assertEqual(get_balance(self.murukku), Decimal('88'))
+
+        # Verify dispatch record created and order dispatched
+        self.assertTrue(invoice.is_dispatched)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.STATUS_DISPATCHED)
+
+    def test_salesman_a_gets_403_on_invoices_list(self):
+        """salesman_a gets 403 on the invoices list"""
+        # Salesman A gets 403 on invoices list
+        resp = self.client_a.get(reverse('invoice_list'))
+        self.assertEqual(resp.status_code, 403)
+
+        # Admin and owner get 200 on invoices list
+        admin_resp = self.admin_client.get(reverse('invoice_list'))
+        self.assertEqual(admin_resp.status_code, 200)
+
+        owner_resp = self.owner_client.get(reverse('invoice_list'))
+        self.assertEqual(owner_resp.status_code, 200)
+
+    def test_dispatch_with_insufficient_stock_shows_red_error_and_changes_nothing(self):
+        """dispatch button calls dispatch_invoice; show a clear red message if stock is not enough and change nothing"""
+        # Stock is 50
+        self.assertEqual(get_balance(self.murukku), Decimal('50'))
+
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.distributor_b,
+            salesman=self.salesman_b,
+            status=Order.STATUS_APPROVED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('120'),
+            price_paise=5000,
+        )
+        invoice = create_invoice(order, user=self.admin_user)
+
+        # Admin attempts to dispatch
+        resp = self.admin_client.post(reverse('invoice_dispatch', args=[invoice.pk]), follow=True)
+        self.assertEqual(resp.status_code, 200)
+
+        # Stock remains unchanged at 50
+        self.assertEqual(get_balance(self.murukku), Decimal('50'))
+
+        # No dispatch record created
+        self.assertFalse(invoice.is_dispatched)
+
+        # Error message shown on page (red message in alert)
+        self.assertContains(resp, "Insufficient stock")
+        self.assertContains(resp, "bg-rose-50")
 

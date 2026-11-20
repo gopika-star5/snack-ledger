@@ -105,6 +105,33 @@
             <strong class="font-bold">Order Note:</strong> {{ order.note }}
         </div>
         {% endif %}
+
+        {% if order.status == 'approved' %}
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div>
+                <span class="text-xs font-bold text-blue-900">Order Approved</span>
+                <p class="text-xs text-blue-700">Ready to generate tax invoice.</p>
+            </div>
+            <form method="post" action="{% url 'create_invoice' order.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl text-xs md:text-sm shadow-md transition flex items-center justify-center space-x-2">
+                    <span>🧾</span>
+                    <span>Create Invoice</span>
+                </button>
+            </form>
+        </div>
+        {% elif order.status == 'invoiced' and order.invoices.exists %}
+        <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div>
+                <span class="text-xs font-bold text-indigo-900">Tax Invoice Generated</span>
+                <p class="text-xs text-indigo-700">{{ order.invoices.first.number }}</p>
+            </div>
+            <a href="{% url 'invoice_detail' order.invoices.first.pk %}" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl text-xs md:text-sm shadow-md transition flex items-center justify-center space-x-2">
+                <span>🧾</span>
+                <span>View Invoice</span>
+            </a>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Big Back Button -->

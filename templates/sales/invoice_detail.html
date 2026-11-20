@@ -1,0 +1,246 @@
+{% extends 'base.html' %}
+
+{% block title %}Invoice {{ invoice.number }}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6 pb-12">
+    <!-- Blue Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center space-x-2 text-xs text-blue-200 mb-2">
+                    <a href="{% url 'admin_home' %}" class="hover:text-white transition">Admin Home</a>
+                    <span>&bull;</span>
+                    <a href="{% url 'invoice_list' %}" class="hover:text-white transition">Invoices</a>
+                    <span>&bull;</span>
+                    <span class="text-white font-semibold">{{ invoice.number }}</span>
+                </div>
+                <span class="bg-blue-900/60 text-blue-200 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+                    Tax Invoice
+                </span>
+                <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Invoice {{ invoice.number }}</h1>
+                <p class="text-blue-100 text-sm mt-1">
+                    Date: {{ invoice.date|date:"d M Y" }} &bull; Place of Supply: {{ invoice.place_of_supply }}
+                </p>
+            </div>
+            <div>
+                <span class="inline-flex items-center px-3.5 py-1.5 text-xs font-black uppercase tracking-wider rounded-full border
+                    {% if invoice.status == 'cancelled' %}bg-rose-100 text-rose-900 border-rose-300
+                    {% elif invoice.is_dispatched %}bg-emerald-100 text-emerald-900 border-emerald-300
+                    {% else %}bg-blue-100 text-blue-900 border-blue-300{% endif %}">
+                    {% if invoice.status == 'cancelled' %}✕ Cancelled
+                    {% elif invoice.is_dispatched %}🚚 Dispatched
+                    {% else %}🧾 Posted{% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Alert if Cancelled or Dispatched -->
+    {% if invoice.status == 'cancelled' %}
+    <div class="bg-rose-50 border-2 border-rose-400 p-4 rounded-2xl shadow-sm text-rose-900 flex items-start space-x-3">
+        <span class="text-2xl mt-0.5">⚠️</span>
+        <div>
+            <h3 class="font-black text-base text-rose-900">Invoice Cancelled</h3>
+            <p class="text-xs text-rose-800 mt-1">
+                This invoice was cancelled. Any associated stock movements have been reversed.
+                {% if invoice.credit_notes.exists %}
+                Credit Note: <strong class="font-mono">{{ invoice.credit_notes.first.number }}</strong>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    {% elif invoice.is_dispatched %}
+    <div class="bg-emerald-50 border-2 border-emerald-300 p-4 rounded-2xl shadow-sm text-emerald-900 flex items-start space-x-3">
+        <span class="text-2xl mt-0.5">🚚</span>
+        <div>
+            <h3 class="font-black text-base text-emerald-900">Dispatched from Factory</h3>
+            <p class="text-xs text-emerald-800 mt-1">
+                Stock has been issued and deducted from finished goods inventory per FEFO.
+                Date of Dispatch: <strong>{{ invoice.dispatches.first.date|date:"d M Y" }}</strong>
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Party Details Card -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm bg-slate-50 p-4 rounded-xl border border-slate-100">
+            <!-- Customer with GSTIN -->
+            <div>
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-wider block">Customer</span>
+                <div class="font-extrabold text-slate-800 text-base mt-0.5">{{ invoice.customer.name }}</div>
+                <div class="text-xs text-slate-500 mt-0.5">
+                    {{ invoice.customer.state }} &bull; {{ invoice.customer.get_customer_type_display }}
+                </div>
+                <div class="text-xs font-mono font-bold text-slate-700 mt-1">
+                    GSTIN: <span class="text-indigo-700">{{ invoice.customer.gstin|default:"Unregistered" }}</span>
+                </div>
+                {% if invoice.customer.address %}
+                <div class="text-xs text-slate-500 mt-1">{{ invoice.customer.address }}</div>
+                {% endif %}
+            </div>
+
+            <!-- Supplier / Factory Details -->
+            <div>
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-wider block">Billed By</span>
+                <div class="font-bold text-slate-800 text-base mt-0.5">{{ company.name|default:"Snack Factory" }}</div>
+                <div class="text-xs text-slate-500 mt-0.5">{{ company.state|default:"Tamil Nadu" }}</div>
+                <div class="text-xs font-mono font-bold text-slate-700 mt-1">
+                    GSTIN: <span class="text-indigo-700">{{ company.gstin|default:"33CCCCC0000C1Z5" }}</span>
+                </div>
+            </div>
+
+            <!-- Invoice Meta -->
+            <div>
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-wider block">Invoice Details</span>
+                <div class="text-xs text-slate-600 mt-1 space-y-1">
+                    <div>Invoice No: <strong class="font-mono text-slate-900">{{ invoice.number }}</strong></div>
+                    <div>Date: <strong class="text-slate-900">{{ invoice.date|date:"d M Y" }}</strong></div>
+                    <div>Order Ref: <a href="{% url 'admin_order_detail' invoice.order.pk %}" class="text-blue-600 hover:underline font-bold">Order #{{ invoice.order.pk }}</a></div>
+                    <div>FY: <span class="font-mono text-slate-700">{{ invoice.financial_year }}</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lines Table Card -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+            <h2 class="text-base md:text-lg font-extrabold text-slate-800">Invoice Items & GST Calculation</h2>
+            <span class="text-xs text-slate-400 font-medium font-mono">{{ lines|length }} item(s)</span>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-slate-500 border-b border-slate-200 text-xs uppercase tracking-wider">
+                        <th class="pb-2 text-left font-bold">Item Description</th>
+                        <th class="pb-2 text-center font-bold">HSN</th>
+                        <th class="pb-2 text-right font-bold">Qty</th>
+                        <th class="pb-2 text-right font-bold">Rate</th>
+                        <th class="pb-2 text-right font-bold">Taxable Value</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-mono">
+                    {% for line in lines %}
+                    <tr class="hover:bg-slate-50">
+                        <td class="py-3 font-sans font-semibold text-slate-800 text-left">
+                            {{ line.item.name }}
+                            {% if line.lot %}
+                            <span class="block text-[11px] font-mono text-slate-400">Batch: {{ line.lot.batch_no }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3 text-center text-slate-600">{{ line.hsn|default:line.item.hsn_code }}</td>
+                        <td class="py-3 text-right text-slate-700">{{ line.qty }} {{ line.item.stock_unit.code }}s</td>
+                        <td class="py-3 text-right text-slate-600">{{ line.rate_formatted }}</td>
+                        <td class="py-3 text-right font-bold text-slate-900">{{ line.taxable_formatted }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tax Totals Breakdown -->
+        <div class="pt-4 border-t-2 border-slate-200 flex flex-col md:flex-row justify-between items-start gap-4">
+            <div class="text-xs text-slate-500 max-w-sm">
+                <span class="font-bold text-slate-700 block uppercase tracking-wider mb-1">Amount in Words</span>
+                <span class="italic text-slate-800 font-serif">{{ amount_in_words }}</span>
+            </div>
+
+            <div class="w-full md:w-72 space-y-2 text-sm font-mono">
+                <div class="flex justify-between text-slate-600">
+                    <span>Taxable Subtotal:</span>
+                    <span class="font-bold text-slate-800">{{ invoice.taxable_formatted }}</span>
+                </div>
+
+                {% if is_intra_state or invoice.cgst_paise %}
+                <div class="flex justify-between text-slate-600">
+                    <span>CGST (2.5%):</span>
+                    <span class="font-bold text-slate-800">{{ invoice.cgst_formatted }}</span>
+                </div>
+                <div class="flex justify-between text-slate-600">
+                    <span>SGST (2.5%):</span>
+                    <span class="font-bold text-slate-800">{{ invoice.sgst_formatted }}</span>
+                </div>
+                {% else %}
+                <div class="flex justify-between text-slate-600">
+                    <span>IGST (5%):</span>
+                    <span class="font-bold text-slate-800">{{ invoice.igst_formatted }}</span>
+                </div>
+                {% endif %}
+
+                <div class="pt-2 border-t border-slate-200 flex justify-between items-baseline text-slate-900 font-sans">
+                    <span class="text-sm font-extrabold uppercase tracking-wider text-slate-700">Total:</span>
+                    <span class="text-2xl font-black text-slate-900 font-mono">{{ invoice.total_formatted }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions & Buttons Card -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-4">
+        <h3 class="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Invoice Actions</h3>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <!-- Left group: Back link & WhatsApp share -->
+            <div class="flex flex-wrap items-center gap-2">
+                <a href="{% url 'invoice_list' %}" class="inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2.5 rounded-xl transition">
+                    <span>←</span>
+                    <span>All Invoices</span>
+                </a>
+
+                <!-- WhatsApp Share Link (wa.me) -->
+                <a href="{{ wa_url }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold py-2.5 px-4 rounded-xl text-xs md:text-sm shadow transition">
+                    <span>💬</span>
+                    <span>Share on WhatsApp</span>
+                </a>
+            </div>
+
+            <!-- Right group: Download PDF, Dispatch, Cancel Invoice -->
+            <div class="flex flex-wrap items-center gap-2">
+                <!-- Download PDF Button -->
+                <a href="{% url 'invoice_pdf' invoice.pk %}"
+                   class="inline-flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-900 active:scale-[0.99] text-white font-bold py-2.5 px-4 rounded-xl text-xs md:text-sm shadow transition">
+                    <span>📄</span>
+                    <span>Download PDF</span>
+                </a>
+
+                <!-- Dispatch Button -->
+                {% if not invoice.is_dispatched and invoice.status != 'cancelled' %}
+                <form method="post" action="{% url 'invoice_dispatch' invoice.pk %}" class="inline">
+                    {% csrf_token %}
+                    <button type="submit"
+                            name="action"
+                            value="dispatch"
+                            onclick="return confirm('Dispatch finished goods for this invoice? This will deduct stock.');"
+                            class="inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-extrabold py-2.5 px-5 rounded-xl text-xs md:text-sm shadow transition">
+                        <span>🚚</span>
+                        <span>Dispatch</span>
+                    </button>
+                </form>
+                {% endif %}
+
+                <!-- Cancel Invoice Button -->
+                {% if invoice.status != 'cancelled' %}
+                <form method="post" action="{% url 'invoice_cancel' invoice.pk %}" class="inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="reason" value="Cancelled by admin">
+                    <button type="submit"
+                            name="action"
+                            value="cancel"
+                            onclick="return confirm('Are you sure you want to cancel this invoice? A credit note will be issued.');"
+                            class="inline-flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold py-2.5 px-4 rounded-xl text-xs md:text-sm transition">
+                        <span>✕</span>
+                        <span>Cancel Invoice</span>
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

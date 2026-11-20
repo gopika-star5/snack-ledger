@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tax Invoice {{ invoice.number }}</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 12mm 15mm 15mm 15mm;
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: 'DejaVu Sans', Arial, sans-serif;
+                font-size: 8pt;
+                color: #64748b;
+            }
+        }
+
+        body {
+            font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif;
+            color: #1e293b;
+            font-size: 10pt;
+            line-height: 1.4;
+            margin: 0;
+            padding: 0;
+        }
+
+        .header-table {
+            width: 100%;
+            border-bottom: 2px solid #2563eb;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }
+
+        .company-title {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #1e3a8a;
+            margin: 0 0 4px 0;
+        }
+
+        .company-meta {
+            font-size: 8.5pt;
+            color: #475569;
+        }
+
+        .invoice-badge-cell {
+            text-align: right;
+            vertical-align: top;
+        }
+
+        .invoice-title {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #1e293b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 0 0 4px 0;
+        }
+
+        .invoice-num {
+            font-size: 11pt;
+            font-weight: bold;
+            color: #2563eb;
+            font-family: monospace;
+        }
+
+        .details-grid {
+            width: 100%;
+            margin-bottom: 18px;
+            border-collapse: collapse;
+        }
+
+        .details-grid td {
+            vertical-align: top;
+            width: 50%;
+            padding: 8px 10px;
+            border: 1px solid #e2e8f0;
+            background-color: #f8fafc;
+        }
+
+        .section-label {
+            font-size: 7.5pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+
+        .party-name {
+            font-size: 11pt;
+            font-weight: bold;
+            color: #0f172a;
+            margin-bottom: 2px;
+        }
+
+        .party-gstin {
+            font-size: 9pt;
+            font-weight: bold;
+            color: #1e40af;
+            font-family: monospace;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+        }
+
+        .items-table th {
+            background-color: #1e3a8a;
+            color: #ffffff;
+            font-size: 8.5pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 8px 6px;
+            border: 1px solid #1e3a8a;
+        }
+
+        .items-table td {
+            padding: 8px 6px;
+            border: 1px solid #cbd5e1;
+            font-size: 9pt;
+        }
+
+        .items-table tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+
+        .totals-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+        }
+
+        .totals-table td {
+            padding: 4px 8px;
+        }
+
+        .words-box {
+            border: 1px solid #cbd5e1;
+            background-color: #f1f5f9;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+            font-size: 9pt;
+        }
+
+        .share-box {
+            border: 1px dashed #059669;
+            background-color: #ecfdf5;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 8.5pt;
+            color: #065f46;
+            margin-bottom: 16px;
+        }
+
+        .share-link {
+            color: #047857;
+            text-decoration: underline;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 8pt;
+        }
+
+        .footer-note {
+            margin-top: 24px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+            font-size: 7.5pt;
+            color: #94a3b8;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Table: Company Name, GSTIN, Invoice Title & Number -->
+    <table class="header-table">
+        <tr>
+            <td style="vertical-align: top;">
+                <h1 class="company-title">{{ company.name|default:"Snack Factory" }}</h1>
+                <div class="company-meta">
+                    <strong>GSTIN:</strong> {{ company.gstin|default:"33CCCCC0000C1Z5" }} &bull; 
+                    <strong>State:</strong> {{ company.state|default:"Tamil Nadu" }} (Code: 33)<br>
+                    Food Processing & Snack Manufacturing Facility
+                </div>
+            </td>
+            <td class="invoice-badge-cell">
+                <div class="invoice-title">Tax Invoice</div>
+                <div class="invoice-num">#{{ invoice.number }}</div>
+                <div style="font-size: 8.5pt; color: #475569; margin-top: 3px;">
+                    <strong>Date:</strong> {{ invoice.date|date:"d M Y" }}
+                </div>
+                <div style="font-size: 8pt; color: #64748b;">
+                    Place of Supply: {{ invoice.place_of_supply }}
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Party Details Grid: Customer GSTIN, Billed From, Order Ref -->
+    <table class="details-grid">
+        <tr>
+            <td>
+                <div class="section-label">Billed To (Customer Details)</div>
+                <div class="party-name">{{ invoice.customer.name }}</div>
+                <div class="party-gstin">GSTIN: {{ invoice.customer.gstin|default:"Unregistered" }}</div>
+                <div style="font-size: 8.5pt; color: #475569; margin-top: 2px;">
+                    State: {{ invoice.customer.state }} &bull; Type: {{ invoice.customer.get_customer_type_display }}
+                    {% if invoice.customer.address %}<br>{{ invoice.customer.address }}{% endif %}
+                </div>
+            </td>
+            <td>
+                <div class="section-label">Invoice & Order Reference</div>
+                <div style="font-size: 9pt; color: #334155; line-height: 1.5;">
+                    <strong>Invoice Number:</strong> {{ invoice.number }}<br>
+                    <strong>Invoice Date:</strong> {{ invoice.date|date:"d M Y" }}<br>
+                    <strong>Order Reference:</strong> Order #{{ invoice.order.pk }}<br>
+                    <strong>Financial Year:</strong> {{ invoice.financial_year }}<br>
+                    <strong>Status:</strong> {{ invoice.get_status_display }}
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Line Items Table: item, HSN, qty, rate, taxable -->
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 5%; text-align: center;">#</th>
+                <th style="width: 45%; text-align: left;">Item Description</th>
+                <th style="width: 12%; text-align: center;">HSN</th>
+                <th style="width: 10%; text-align: right;">Qty</th>
+                <th style="width: 13%; text-align: right;">Rate</th>
+                <th style="width: 15%; text-align: right;">Taxable Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in lines %}
+            <tr>
+                <td style="text-align: center; color: #64748b;">{{ forloop.counter }}</td>
+                <td>
+                    <strong>{{ line.item.name }}</strong>
+                    {% if line.lot %}
+                    <div style="font-size: 7.5pt; color: #64748b; font-family: monospace;">Batch: {{ line.lot.batch_no }}</div>
+                    {% endif %}
+                </td>
+                <td style="text-align: center; font-family: monospace;">{{ line.hsn|default:line.item.hsn_code }}</td>
+                <td style="text-align: right; font-family: monospace;">{{ line.qty }} {{ line.item.stock_unit.code }}</td>
+                <td style="text-align: right; font-family: monospace;">{{ line.rate_formatted }}</td>
+                <td style="text-align: right; font-weight: bold; font-family: monospace;">{{ line.taxable_formatted }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Totals Table: Taxable Value, CGST/SGST or IGST, Total in Rupees -->
+    <table class="totals-table">
+        <tr>
+            <td style="width: 55%; vertical-align: top;">
+                <!-- Amount in Words -->
+                <div class="words-box">
+                    <div style="font-size: 7.5pt; font-weight: bold; text-transform: uppercase; color: #64748b;">
+                        Amount in Words (Indian Rupees)
+                    </div>
+                    <div style="font-size: 9.5pt; font-weight: bold; color: #0f172a; margin-top: 2px;">
+                        {{ amount_in_words }}
+                    </div>
+                </div>
+
+                <!-- WhatsApp Share Link (wa.me) -->
+                <div class="share-box">
+                    <strong>WhatsApp Share Link:</strong><br>
+                    <a href="{{ wa_url }}" class="share-link">{{ wa_url }}</a>
+                </div>
+            </td>
+            <td style="width: 45%; vertical-align: top;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 9pt;">
+                    <tr>
+                        <td style="padding: 4px 6px; color: #475569;">Taxable Value:</td>
+                        <td style="padding: 4px 6px; text-align: right; font-weight: bold; font-family: monospace;">
+                            {{ invoice.taxable_formatted }}
+                        </td>
+                    </tr>
+
+                    {% if is_intra_state or invoice.cgst_paise %}
+                    <tr>
+                        <td style="padding: 4px 6px; color: #475569;">CGST (2.5%):</td>
+                        <td style="padding: 4px 6px; text-align: right; font-weight: bold; font-family: monospace;">
+                            {{ invoice.cgst_formatted }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 4px 6px; color: #475569;">SGST (2.5%):</td>
+                        <td style="padding: 4px 6px; text-align: right; font-weight: bold; font-family: monospace;">
+                            {{ invoice.sgst_formatted }}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td style="padding: 4px 6px; color: #475569;">IGST (5%):</td>
+                        <td style="padding: 4px 6px; text-align: right; font-weight: bold; font-family: monospace;">
+                            {{ invoice.igst_formatted }}
+                        </td>
+                    </tr>
+                    {% endif %}
+
+                    <tr style="border-top: 2px solid #1e293b; border-bottom: 2px solid #1e293b; background-color: #f8fafc;">
+                        <td style="padding: 8px 6px; font-weight: bold; font-size: 11pt; color: #0f172a;">
+                            Total (INR):
+                        </td>
+                        <td style="padding: 8px 6px; text-align: right; font-weight: bold; font-size: 13pt; color: #1e3a8a; font-family: monospace;">
+                            {{ invoice.total_formatted }}
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <div class="footer-note">
+        This is a computer-generated GST tax invoice issued by {{ company.name|default:"Snack Factory" }}. Generated via Snack Ledger OS.
+    </div>
+
+</body>
+</html>

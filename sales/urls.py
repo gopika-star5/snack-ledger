@@ -10,4 +10,15 @@ urlpatterns = [
     path('pending-orders/', views.admin_pending_orders, name='pending_orders'),
     path('admin/orders/<int:pk>/', views.admin_order_detail, name='admin_order_detail'),
     path('orders/<int:pk>/review/', views.admin_order_detail, name='admin_order_review'),
+
+    # Invoice & Dispatch routes
+    path('invoices/', views.invoice_list, name='invoice_list'),
+    path('admin/invoices/', views.invoice_list, name='admin_invoices'),
+    path('orders/<int:pk>/create-invoice/', views.create_invoice_from_order, name='create_invoice'),
+    path('orders/<int:pk>/invoice/create/', views.create_invoice_from_order, name='order_create_invoice'),
+    path('invoices/<int:pk>/', views.invoice_detail, name='invoice_detail'),
+    path('admin/invoices/<int:pk>/', views.invoice_detail, name='admin_invoice_detail'),
+    path('invoices/<int:pk>/pdf/', views.invoice_pdf, name='invoice_pdf'),
+    path('invoices/<int:pk>/dispatch/', views.invoice_dispatch, name='invoice_dispatch'),
+    path('invoices/<int:pk>/cancel/', views.invoice_cancel, name='invoice_cancel'),
 ]
