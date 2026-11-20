@@ -1,20 +1,22 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
 
 from django import forms
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from core.decorators import role_required
 from core.ledger import InsufficientStock, receive_stock
-from core.models import Item, Supplier, Unit
+from core.models import Item, Supplier, Unit, StockMovement
 from core.units import convert
+from sales.utils import format_inr
 
-from .models import BOM, BOMLine, ProductionRun, Purchase, PurchaseLine, RunIssue, RunVarianceLine
+from .models import BOM, BOMLine, ProductionRun, Purchase, PurchaseLine, RunIssue, RunVarianceLine, RunOverhead
 from .services import post_run
 
 
@@ -309,16 +311,175 @@ def run_result(request, pk):
     """
     Run result page: summary and a variance table (item, planned, actual, variance %, status badge).
     Flagged rows are red; favourable variances are green. Show the yield variance row.
+    Cost card with material cost (FIFO), overheads, total cost, good packets, cost per packet,
+    selling price, margin in rupees and percent, and weighted-average material cost.
+    Overhead entry: add RunOverhead rows (description, amount in rupees saved as paise).
     """
     run = get_object_or_404(
         ProductionRun.objects.select_related('bom__finished_item__stock_unit', 'created_by')
-        .prefetch_related('variance_lines__item__stock_unit'),
+        .prefetch_related('variance_lines__item__stock_unit', 'overheads'),
         pk=pk,
     )
 
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'delete_overhead':
+            overhead_id = request.POST.get('overhead_id')
+            if overhead_id:
+                RunOverhead.objects.filter(pk=overhead_id, run=run).delete()
+            return redirect('run_result', pk=run.pk)
+
+        # Handle adding overheads
+        # Support single or multiple overhead rows
+        descriptions = request.POST.getlist('description') or request.POST.getlist('descriptions')
+        amounts = request.POST.getlist('amount') or request.POST.getlist('amount_rupees') or request.POST.getlist('amounts')
+
+        if not descriptions and 'description' in request.POST:
+            descriptions = [request.POST['description']]
+            amounts = [
+                request.POST.get('amount_rupees')
+                or request.POST.get('amount')
+                or request.POST.get('amount_paise')
+            ]
+
+        if descriptions:
+            for idx, desc in enumerate(descriptions):
+                desc_str = (desc or '').strip()
+                if not desc_str:
+                    continue
+                amt_val = amounts[idx] if idx < len(amounts) else None
+                if amt_val is None or str(amt_val).strip() == '':
+                    continue
+
+                raw_amt = str(amt_val).strip().replace('₹', '').replace(',', '')
+                try:
+                    if 'amount_paise' in request.POST and not request.POST.get('amount_rupees') and not request.POST.get('amount'):
+                        amt_paise = int(raw_amt)
+                    elif '.' in raw_amt:
+                        amt_paise = int((Decimal(raw_amt) * Decimal('100')).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+                    else:
+                        val_int = int(raw_amt)
+                        # Amount in rupees saved as paise: e.g. 1200 -> 120000
+                        amt_paise = val_int * 100
+
+                    if amt_paise > 0:
+                        RunOverhead.objects.create(
+                            run=run,
+                            description=desc_str,
+                            amount_paise=amt_paise,
+                        )
+                except Exception:
+                    pass
+
+        return redirect('run_result', pk=run.pk)
+
     expected_yield = run.bom.batch_yield * run.batches
-    material_cost_rupees = f"{(run.material_cost_paise or 0) / 100:.2f}"
+
+    # 1. Material cost (sum of FIFO costs from the run's consumption movements)
+    consumption_movements = list(
+        StockMovement.objects.filter(
+            source_type="production",
+            source_id=str(run.pk),
+            qty__lt=0,
+        )
+    )
+    if consumption_movements:
+        material_cost_paise = sum(
+            int((abs(m.qty) * Decimal(m.unit_cost_paise)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+            for m in consumption_movements
+        )
+    else:
+        material_cost_paise = run.material_cost_paise or 0
+
+    material_cost_rupees = f"{material_cost_paise / 100:.2f}"
+    material_cost_formatted = format_inr(material_cost_paise)
     unit_cost_rupees = f"{(run.unit_cost_paise or 0) / 100:.2f}"
+
+    # 2. Overheads
+    overheads_list = list(run.overheads.all())
+    overhead_cost_paise = sum(o.amount_paise for o in overheads_list)
+    overhead_cost_rupees = f"{overhead_cost_paise / 100:.2f}"
+    overhead_cost_formatted = format_inr(overhead_cost_paise)
+
+    # 3. Total cost
+    total_cost_paise = material_cost_paise + overhead_cost_paise
+    total_cost_rupees = f"{total_cost_paise / 100:.2f}"
+    total_cost_formatted = format_inr(total_cost_paise)
+
+    # 4. Good packets
+    good_packets = Decimal(str(run.actual_good_output or 0))
+
+    # Rule: Overhead is allocated equally per good packet.
+    if good_packets > Decimal('0'):
+        cost_per_packet_paise = int(
+            (Decimal(total_cost_paise) / good_packets).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        )
+        fifo_material_per_pkt_paise = int(
+            (Decimal(material_cost_paise) / good_packets).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        )
+    else:
+        cost_per_packet_paise = 0
+        fifo_material_per_pkt_paise = 0
+
+    cost_per_packet_rupees = f"{cost_per_packet_paise / 100:.2f}"
+    cost_per_packet_formatted = format_inr(cost_per_packet_paise)
+
+    # 5. Selling price
+    selling_price_paise = int(run.bom.finished_item.selling_price_paise or 0)
+    selling_price_rupees = f"{selling_price_paise / 100:.2f}"
+    selling_price_formatted = format_inr(selling_price_paise)
+
+    # 6. Margin in rupees and percent
+    margin_paise = selling_price_paise - cost_per_packet_paise
+    margin_rupees = f"{margin_paise / 100:.2f}"
+    margin_formatted = format_inr(margin_paise)
+    if selling_price_paise > 0:
+        margin_percent = ((Decimal(margin_paise) / Decimal(selling_price_paise)) * Decimal('100')).quantize(
+            Decimal('0.1'), rounding=ROUND_HALF_UP
+        )
+    else:
+        margin_percent = Decimal('0.0')
+
+    # 7. Weighted-average material cost per packet for comparison
+    item_consumed_qtys = {}
+    for m in consumption_movements:
+        item_consumed_qtys[m.item_id] = item_consumed_qtys.get(m.item_id, Decimal('0')) + abs(m.qty)
+
+    wa_material_cost_paise = 0
+    for item_id, consumed_qty in item_consumed_qtys.items():
+        receipts = StockMovement.objects.filter(item_id=item_id, qty__gt=0)
+        tot_qty = sum(r.qty for r in receipts)
+        tot_val = sum(r.qty * r.unit_cost_paise for r in receipts)
+        if tot_qty > Decimal('0'):
+            wa_rate = tot_val / tot_qty
+        else:
+            try:
+                item_obj = Item.objects.get(pk=item_id)
+                wa_rate = Decimal(item_obj.cost_price_paise or 0)
+            except Item.DoesNotExist:
+                wa_rate = Decimal('0')
+        wa_material_cost_paise += int((consumed_qty * wa_rate).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+    if not consumption_movements and run.material_cost_paise:
+        wa_material_cost_paise = run.material_cost_paise
+
+    if good_packets > Decimal('0'):
+        wa_material_cost_per_pkt_paise = int(
+            (Decimal(wa_material_cost_paise) / good_packets).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        )
+        wa_total_cost_per_pkt_paise = int(
+            ((Decimal(wa_material_cost_paise) + Decimal(overhead_cost_paise)) / good_packets).quantize(
+                Decimal('1'), rounding=ROUND_HALF_UP
+            )
+        )
+    else:
+        wa_material_cost_per_pkt_paise = 0
+        wa_total_cost_per_pkt_paise = 0
+
+    wa_material_cost_per_pkt_rupees = f"{wa_material_cost_per_pkt_paise / 100:.2f}"
+    wa_material_cost_per_pkt_formatted = format_inr(wa_material_cost_per_pkt_paise)
+    wa_total_cost_per_pkt_rupees = f"{wa_total_cost_per_pkt_paise / 100:.2f}"
+    wa_total_cost_per_pkt_formatted = format_inr(wa_total_cost_per_pkt_paise)
 
     variance_lines = []
     for vl in run.variance_lines.all():
@@ -378,10 +539,105 @@ def run_result(request, pk):
         'run': run,
         'expected_yield': expected_yield,
         'material_cost_rupees': material_cost_rupees,
+        'material_cost_paise': material_cost_paise,
+        'material_cost_formatted': material_cost_formatted,
         'unit_cost_rupees': unit_cost_rupees,
+        'overheads': overheads_list,
+        'overhead_cost_paise': overhead_cost_paise,
+        'overhead_cost_rupees': overhead_cost_rupees,
+        'overhead_cost_formatted': overhead_cost_formatted,
+        'total_cost_paise': total_cost_paise,
+        'total_cost_rupees': total_cost_rupees,
+        'total_cost_formatted': total_cost_formatted,
+        'good_packets': good_packets,
+        'cost_per_packet_paise': cost_per_packet_paise,
+        'cost_per_packet_rupees': cost_per_packet_rupees,
+        'cost_per_packet_formatted': cost_per_packet_formatted,
+        'fifo_material_per_pkt_paise': fifo_material_per_pkt_paise,
+        'selling_price_paise': selling_price_paise,
+        'selling_price_rupees': selling_price_rupees,
+        'selling_price_formatted': selling_price_formatted,
+        'margin_paise': margin_paise,
+        'margin_rupees': margin_rupees,
+        'margin_formatted': margin_formatted,
+        'margin_percent': margin_percent,
+        'wa_material_cost_paise': wa_material_cost_paise,
+        'wa_material_cost_per_pkt_paise': wa_material_cost_per_pkt_paise,
+        'wa_material_cost_per_pkt_rupees': wa_material_cost_per_pkt_rupees,
+        'wa_material_cost_per_pkt_formatted': wa_material_cost_per_pkt_formatted,
+        'wa_total_cost_per_pkt_paise': wa_total_cost_per_pkt_paise,
+        'wa_total_cost_per_pkt_rupees': wa_total_cost_per_pkt_rupees,
+        'wa_total_cost_per_pkt_formatted': wa_total_cost_per_pkt_formatted,
         'variance_lines': variance_lines,
         'yield_row_class': yield_row_class,
         'yield_badge_class': yield_badge_class,
         'yield_badge_text': yield_badge_text,
     }
     return render(request, 'production/run_result.html', context)
+
+
+@role_required('admin', 'owner', 'accountant')
+def product_costing_list(request):
+    """
+    Product Costing page: listing every posted run with cost per packet and margin.
+    Add it as a card on the admin and owner home pages.
+    Only admin, owner and accountant can open it; others get 403.
+    """
+    runs = (
+        ProductionRun.objects.filter(status='posted')
+        .select_related('bom__finished_item__stock_unit', 'created_by')
+        .prefetch_related('overheads')
+        .order_by('-run_date', '-id')
+    )
+
+    costing_rows = []
+    for run in runs:
+        # Rule: Overhead is allocated equally per good packet.
+        good = Decimal(str(run.actual_good_output or 0))
+        mat_cost = int(run.material_cost_paise or 0)
+        overheads = sum(o.amount_paise for o in run.overheads.all())
+        total_cost = mat_cost + overheads
+
+        if good > Decimal('0'):
+            cost_per_pkt = int((Decimal(total_cost) / good).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        else:
+            cost_per_pkt = 0
+
+        sp = int(run.bom.finished_item.selling_price_paise or 0)
+        margin = sp - cost_per_pkt
+        if sp > 0:
+            margin_pct = ((Decimal(margin) / Decimal(sp)) * Decimal('100')).quantize(
+                Decimal('0.1'), rounding=ROUND_HALF_UP
+            )
+        else:
+            margin_pct = Decimal('0.0')
+
+        costing_rows.append({
+            'run': run,
+            'finished_item': run.bom.finished_item,
+            'good_output': good,
+            'material_cost_paise': mat_cost,
+            'material_cost_rupees': f"{mat_cost / 100:.2f}",
+            'material_cost_formatted': format_inr(mat_cost),
+            'overhead_paise': overheads,
+            'overhead_rupees': f"{overheads / 100:.2f}",
+            'overhead_formatted': format_inr(overheads),
+            'total_cost_paise': total_cost,
+            'total_cost_rupees': f"{total_cost / 100:.2f}",
+            'total_cost_formatted': format_inr(total_cost),
+            'cost_per_packet_paise': cost_per_pkt,
+            'cost_per_packet_rupees': f"{cost_per_pkt / 100:.2f}",
+            'cost_per_packet_formatted': format_inr(cost_per_pkt),
+            'selling_price_paise': sp,
+            'selling_price_rupees': f"{sp / 100:.2f}",
+            'selling_price_formatted': format_inr(sp),
+            'margin_paise': margin,
+            'margin_rupees': f"{margin / 100:.2f}",
+            'margin_formatted': format_inr(margin),
+            'margin_percent': margin_pct,
+        })
+
+    context = {
+        'costing_rows': costing_rows,
+    }
+    return render(request, 'production/product_costing.html', context)

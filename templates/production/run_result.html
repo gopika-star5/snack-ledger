@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load sales_tags %}
 {% block title %}Production Run #{{ run.pk }} Result{% endblock %}
 
 {% block content %}
@@ -53,15 +54,219 @@
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
       <div class="text-xs text-slate-400 font-medium">Material Cost</div>
       <div class="text-xl font-bold text-slate-800 font-mono mt-1">₹{{ material_cost_rupees }}</div>
-      <div class="text-[11px] text-slate-500 mt-0.5">{{ run.material_cost_paise }} paise</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">{{ material_cost_paise }} paise</div>
     </div>
 
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
       <div class="text-xs text-slate-400 font-medium">Cost / Packet</div>
-      <div class="text-xl font-bold text-slate-800 font-mono mt-1">₹{{ unit_cost_rupees }}</div>
-      <div class="text-[11px] text-slate-500 mt-0.5">{{ run.unit_cost_paise|default:"0" }} paise</div>
+      <div class="text-xl font-bold text-indigo-700 font-mono mt-1">₹{{ cost_per_packet_rupees }}</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">{{ cost_per_packet_paise }} paise</div>
     </div>
   </div>
+
+  <!-- Cost Card (Product Costing & Margin Analysis) -->
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div>
+        <span class="bg-blue-900/60 text-blue-200 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+          Batch Costing & Economics
+        </span>
+        <h2 class="text-xl font-extrabold mt-1">Cost & Profitability Card</h2>
+        <p class="text-blue-100 text-xs mt-0.5">
+          <!-- Rule: Overhead is allocated equally per good packet. -->
+          Rule: Overhead is allocated equally per good packet.
+        </p>
+      </div>
+      <div class="bg-white/10 backdrop-blur-sm rounded-xl px-3.5 py-2 text-xs border border-white/20">
+        <span class="text-blue-200">Selling Price:</span>
+        <span class="font-bold text-white ml-1 font-mono text-sm">{{ selling_price_formatted }}</span>
+      </div>
+    </div>
+
+    <div class="p-5 md:p-6 space-y-6">
+      <!-- High-level Cost Breakdown Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <!-- Material Cost -->
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Material Cost (FIFO)</span>
+          <div class="text-xl font-black text-slate-800 font-mono mt-1">{{ material_cost_formatted }}</div>
+          <span class="text-[11px] text-slate-500 font-mono mt-0.5 block">{{ material_cost_paise }} paise</span>
+        </div>
+
+        <!-- Overheads -->
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Overheads</span>
+          <div class="text-xl font-black text-slate-800 font-mono mt-1">{{ overhead_cost_formatted }}</div>
+          <span class="text-[11px] text-slate-500 font-mono mt-0.5 block">{{ overhead_cost_paise }} paise</span>
+        </div>
+
+        <!-- Total Cost -->
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Total Run Cost</span>
+          <div class="text-xl font-black text-indigo-950 font-mono mt-1">{{ total_cost_formatted }}</div>
+          <span class="text-[11px] text-slate-500 font-mono mt-0.5 block">{{ total_cost_paise }} paise</span>
+        </div>
+
+        <!-- Good Packets -->
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Good Output</span>
+          <div class="text-xl font-black text-slate-800 font-mono mt-1">{{ good_packets }} pkts</div>
+          <span class="text-[11px] text-slate-500 mt-0.5 block">actual yield</span>
+        </div>
+      </div>
+
+      <!-- Unit Cost & Margin Highlight Banner -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/80 border-2 border-indigo-100 rounded-2xl p-5">
+        <!-- Cost per Packet -->
+        <div class="space-y-1">
+          <span class="text-xs font-bold text-indigo-800 uppercase tracking-wider block">Cost per Packet</span>
+          <div class="text-2xl md:text-3xl font-black text-indigo-900 font-mono">
+            {{ cost_per_packet_formatted }}
+          </div>
+          <p class="text-xs text-slate-500 font-mono">
+            {{ cost_per_packet_paise }} paise &bull; FIFO material + overhead
+          </p>
+        </div>
+
+        <!-- Weighted-Average Comparison -->
+        <div class="space-y-1 border-t md:border-t-0 md:border-l md:border-r border-slate-200 pt-3 md:pt-0 md:px-5">
+          <span class="text-xs font-bold text-slate-600 uppercase tracking-wider block">Weighted-Average Material</span>
+          <div class="text-2xl md:text-3xl font-black text-slate-800 font-mono">
+            {{ wa_material_cost_per_pkt_formatted }}
+          </div>
+          <p class="text-xs text-slate-500 font-mono">
+            {{ wa_material_cost_per_pkt_paise }} paise / pkt (Total WA: {{ wa_total_cost_per_pkt_formatted }})
+          </p>
+        </div>
+
+        <!-- Margin in rupees and percent -->
+        <div class="space-y-1 border-t md:border-t-0 border-slate-200 pt-3 md:pt-0 md:pl-2">
+          <span class="text-xs font-bold text-emerald-800 uppercase tracking-wider block">Margin per Packet</span>
+          <div class="flex items-baseline space-x-2">
+            <span class="text-2xl md:text-3xl font-black text-emerald-700 font-mono">
+              {{ margin_formatted }}
+            </span>
+            <span class="text-lg font-black text-emerald-800 font-sans">
+              ({{ margin_percent }}%)
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 font-mono">
+            {{ margin_paise }} paise margin &bull; SP {{ selling_price_formatted }}
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overhead Entry Card -->
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 md:p-6 space-y-4">
+    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+      <div>
+        <h2 class="text-base font-extrabold text-slate-800 flex items-center space-x-2">
+          <span>⚡</span>
+          <span>Run Overheads</span>
+        </h2>
+        <p class="text-xs text-slate-500">Record production overheads (labour, power, gas, etc.) allocated to this run.</p>
+      </div>
+      <span class="text-xs font-mono font-bold text-slate-600">{{ overheads|length }} overhead(s)</span>
+    </div>
+
+    <!-- Existing Overheads Table -->
+    {% if overheads %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs text-left">
+        <thead class="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200 font-bold">
+          <tr>
+            <th class="py-2.5 px-3">Description</th>
+            <th class="py-2.5 px-3 text-right">Amount (₹)</th>
+            <th class="py-2.5 px-3 text-right">Amount (Paise)</th>
+            <th class="py-2.5 px-3 text-center">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 font-mono">
+          {% for o in overheads %}
+          <tr class="hover:bg-slate-50">
+            <td class="py-2.5 px-3 font-sans font-bold text-slate-800">{{ o.description }}</td>
+            <td class="py-2.5 px-3 text-right font-bold text-slate-900">{{ o.amount_paise|format_inr }}</td>
+            <td class="py-2.5 px-3 text-right text-slate-500">{{ o.amount_paise }}</td>
+            <td class="py-2.5 px-3 text-center font-sans">
+              <form method="post" action="{% url 'run_result' run.pk %}" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_overhead">
+                <input type="hidden" name="overhead_id" value="{{ o.pk }}">
+                <button type="submit" class="text-rose-600 hover:text-rose-800 text-xs font-semibold px-2 py-1 rounded hover:bg-rose-50 transition" title="Delete overhead">
+                  ✕ Remove
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-slate-50 font-mono font-bold border-t border-slate-200">
+          <tr>
+            <td class="py-2.5 px-3 font-sans uppercase">Total Overheads</td>
+            <td class="py-2.5 px-3 text-right text-slate-900">{{ overhead_cost_formatted }}</td>
+            <td class="py-2.5 px-3 text-right text-slate-600">{{ overhead_cost_paise }} paise</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- Add Overhead Form with Pre-fill Suggestions -->
+    <div class="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-bold text-slate-700 uppercase tracking-wider">Add Overhead Expense</span>
+        <!-- Pre-fill suggestions -->
+        <div class="flex items-center space-x-1.5 text-xs">
+          <span class="text-slate-400 font-medium">Suggestions:</span>
+          <button type="button" onclick="setOverheadSuggestion('Labour', 1200)" class="bg-white hover:bg-slate-100 border border-slate-300 px-2.5 py-1 rounded-lg text-slate-700 font-bold transition shadow-xs">
+            + Labour
+          </button>
+          <button type="button" onclick="setOverheadSuggestion('Gas / power', 600)" class="bg-white hover:bg-slate-100 border border-slate-300 px-2.5 py-1 rounded-lg text-slate-700 font-bold transition shadow-xs">
+            + Gas / power
+          </button>
+        </div>
+      </div>
+
+      <form method="post" action="{% url 'run_result' run.pk %}" class="flex flex-col sm:flex-row items-end gap-3">
+        {% csrf_token %}
+        <div class="w-full sm:flex-1">
+          <label for="overhead_desc" class="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+            Description
+          </label>
+          <input type="text" name="description" id="overhead_desc" list="overhead-suggestions" placeholder="e.g. Labour or Gas / power" required
+                 class="w-full bg-white border border-slate-300 text-slate-800 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+          <datalist id="overhead-suggestions">
+            <option value="Labour">
+            <option value="Gas / power">
+          </datalist>
+        </div>
+
+        <div class="w-full sm:w-48">
+          <label for="overhead_amount" class="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+            Amount (Rupees ₹)
+          </label>
+          <input type="text" name="amount" id="overhead_amount" placeholder="e.g. 1200 or 600" required
+                 class="w-full bg-white border border-slate-300 font-mono text-slate-900 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+        </div>
+
+        <button type="submit" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-extrabold text-xs py-2.5 px-5 rounded-xl shadow transition whitespace-nowrap">
+          Add Overhead
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+  function setOverheadSuggestion(desc, defaultAmount) {
+    document.getElementById('overhead_desc').value = desc;
+    if (defaultAmount && !document.getElementById('overhead_amount').value) {
+      document.getElementById('overhead_amount').value = defaultAmount;
+    }
+  }
+  </script>
 
   <!-- Variance Analysis Table -->
   <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">

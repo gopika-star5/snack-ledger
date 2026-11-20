@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -96,6 +96,71 @@ class ProductionRun(models.Model):
 
     def __str__(self):
         return f"Production Run #{self.pk} - {self.bom.finished_item.name} ({self.status})"
+
+    @property
+    def overhead_cost_paise(self) -> int:
+        from django.db.models import Sum
+        return int(self.overheads.aggregate(total=Sum('amount_paise'))['total'] or 0)
+
+    @property
+    def overhead_cost_rupees(self) -> str:
+        return f"{self.overhead_cost_paise / 100:.2f}"
+
+    @property
+    def total_cost_paise(self) -> int:
+        return int(self.material_cost_paise or 0) + self.overhead_cost_paise
+
+    @property
+    def total_cost_rupees(self) -> str:
+        return f"{self.total_cost_paise / 100:.2f}"
+
+    @property
+    def cost_per_packet_paise(self) -> int:
+        # Rule: Overhead is allocated equally per good packet.
+        good = Decimal(str(self.actual_good_output or 0))
+        if good <= Decimal('0'):
+            return 0
+        total = Decimal(str(self.total_cost_paise))
+        return int((total / good).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+    @property
+    def cost_per_packet_rupees(self) -> str:
+        return f"{self.cost_per_packet_paise / 100:.2f}"
+
+    @property
+    def cost_per_packet_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.cost_per_packet_paise)
+
+    @property
+    def selling_price_paise(self) -> int:
+        return int(self.bom.finished_item.selling_price_paise or 0)
+
+    @property
+    def selling_price_rupees(self) -> str:
+        return f"{self.selling_price_paise / 100:.2f}"
+
+    @property
+    def margin_paise(self) -> int:
+        return self.selling_price_paise - self.cost_per_packet_paise
+
+    @property
+    def margin_rupees(self) -> str:
+        return f"{self.margin_paise / 100:.2f}"
+
+    @property
+    def margin_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.margin_paise)
+
+    @property
+    def margin_percent(self) -> Decimal:
+        sp = self.selling_price_paise
+        if sp <= 0:
+            return Decimal('0.0')
+        return ((Decimal(self.margin_paise) / Decimal(sp)) * Decimal('100')).quantize(
+            Decimal('0.1'), rounding=ROUND_HALF_UP
+        )
 
 
 class RunIssue(models.Model):

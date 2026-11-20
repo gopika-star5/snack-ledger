@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% load sales_tags %}
+
+{% block title %}Product Costing & Margins{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6 pb-12">
+    <!-- Blue Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center space-x-2 text-xs text-blue-200 mb-2">
+                    <a href="{% url 'root' %}" class="hover:text-white transition">Home</a>
+                    <span>&bull;</span>
+                    <a href="{% url 'run_list' %}" class="hover:text-white transition">Production</a>
+                    <span>&bull;</span>
+                    <span class="text-white font-semibold">Product Costing</span>
+                </div>
+                <span class="bg-blue-900/60 text-blue-200 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+                    Cost & Profitability Ledger
+                </span>
+                <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Product Costing & Margins</h1>
+                <p class="text-blue-100 text-sm mt-1">
+                    Manufacturing cost per packet, overhead allocations, selling prices, and profit margins across all posted runs.
+                </p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
+                <span class="text-blue-200">Completed Runs:</span>
+                <span class="font-bold text-white ml-1 font-mono text-base">{{ costing_rows|length }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Costing Table Card -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+                <h2 class="text-base font-extrabold text-slate-800">Posted Production Runs Costing</h2>
+                <p class="text-xs text-slate-400">Overhead is allocated equally per good packet. Values in integer paise and rupees.</p>
+            </div>
+            <span class="text-xs text-slate-400 font-mono">Sorted by date (latest first)</span>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs text-left">
+                <thead class="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200 font-bold">
+                    <tr>
+                        <th class="py-3 px-3.5">Run & Date</th>
+                        <th class="py-3 px-3">Product</th>
+                        <th class="py-3 px-3 text-right">Good Output</th>
+                        <th class="py-3 px-3 text-right">Material Cost</th>
+                        <th class="py-3 px-3 text-right">Overheads</th>
+                        <th class="py-3 px-3 text-right">Total Cost</th>
+                        <th class="py-3 px-3.5 text-right font-black text-indigo-900 bg-indigo-50/50">Cost / Pkt</th>
+                        <th class="py-3 px-3 text-right">Selling Price</th>
+                        <th class="py-3 px-3 text-right font-bold text-emerald-800">Margin</th>
+                        <th class="py-3 px-3 text-right font-bold text-emerald-800">Margin %</th>
+                        <th class="py-3 px-3 text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-mono">
+                    {% for row in costing_rows %}
+                    <tr class="hover:bg-slate-50/80 transition">
+                        <!-- Run & Date -->
+                        <td class="py-3 px-3.5 font-sans">
+                            <a href="{% url 'run_result' row.run.pk %}" class="font-bold text-blue-700 hover:underline">
+                                Run #{{ row.run.pk }}
+                            </a>
+                            <div class="text-[11px] text-slate-500 font-mono">{{ row.run.run_date|date:"d M Y" }}</div>
+                        </td>
+
+                        <!-- Product -->
+                        <td class="py-3 px-3 font-sans">
+                            <span class="font-bold text-slate-800">{{ row.finished_item.name }}</span>
+                            <span class="block text-[11px] text-slate-400">{{ row.run.batches }} batch(es)</span>
+                        </td>
+
+                        <!-- Good Output -->
+                        <td class="py-3 px-3 text-right text-slate-700">
+                            {{ row.good_output }} pkts
+                        </td>
+
+                        <!-- Material Cost -->
+                        <td class="py-3 px-3 text-right text-slate-700">
+                            {{ row.material_cost_formatted }}
+                        </td>
+
+                        <!-- Overheads -->
+                        <td class="py-3 px-3 text-right text-slate-700">
+                            {{ row.overhead_formatted }}
+                        </td>
+
+                        <!-- Total Cost -->
+                        <td class="py-3 px-3 text-right font-bold text-slate-800">
+                            {{ row.total_cost_formatted }}
+                        </td>
+
+                        <!-- Cost per Packet -->
+                        <td class="py-3 px-3.5 text-right font-black text-indigo-950 text-sm bg-indigo-50/40">
+                            {{ row.cost_per_packet_formatted }}
+                        </td>
+
+                        <!-- Selling Price -->
+                        <td class="py-3 px-3 text-right text-slate-700">
+                            {{ row.selling_price_formatted }}
+                        </td>
+
+                        <!-- Margin -->
+                        <td class="py-3 px-3 text-right font-bold text-emerald-700">
+                            {{ row.margin_formatted }}
+                        </td>
+
+                        <!-- Margin % -->
+                        <td class="py-3 px-3 text-right font-black text-emerald-800">
+                            {{ row.margin_percent }}%
+                        </td>
+
+                        <!-- Action -->
+                        <td class="py-3 px-3 text-center font-sans">
+                            <a href="{% url 'run_result' row.run.pk %}"
+                               class="inline-flex items-center space-x-1 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition">
+                                <span>Details</span>
+                                <span>→</span>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="11" class="py-8 text-center text-slate-400 font-sans">
+                            No posted production runs found yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

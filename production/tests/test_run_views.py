@@ -204,3 +204,155 @@ class FullFormFlowBenchmarkTest(TestCase):
         self.assertIn(f'#{run.id}', list_content)
         self.assertIn('Murukku 200 g', list_content)
         self.assertIn('posted', list_content.lower())
+
+
+class BenchmarkCostingTest(TestCase):
+    """
+    Test costing with benchmark numbers:
+    material cost 401000 paise plus overheads 120000 + 60000 = 581000 paise over 188 packets
+    gives 3090 paise per packet (₹30.90), margin 1910 paise (about 38%).
+    Product Costing page access control: admin, owner, accountant get 200; others get 403.
+    """
+
+    def setUp(self):
+        call_command('seed_benchmark', verbosity=0)
+        self.admin_user = User.objects.get(username='admin1')
+        self.prod_user = User.objects.get(username='prod1')
+        self.owner_user = User.objects.get(username='owner1')
+        self.acct_user = User.objects.get(username='acct1')
+        self.salesman_a = User.objects.get(username='salesman_a')
+
+        self.flour = Item.objects.get(name='Flour')
+        self.oil = Item.objects.get(name='Cooking oil')
+        self.spice = Item.objects.get(name='Salt and spice mix')
+        self.pouch = Item.objects.get(name='200 g pouch')
+        self.carton = Item.objects.get(name='Carton')
+        self.murukku = Item.objects.get(name='Murukku 200 g')
+        self.bom = BOM.objects.get(finished_item=self.murukku)
+
+        # Benchmark Step 1: Purchase 60 kg flour at 4500 paise
+        supplier = Supplier.objects.get(name='Demo Flour Mills')
+        kg = Unit.objects.get(code='kg')
+        purchase = Purchase.objects.create(
+            supplier=supplier,
+            date=date.today(),
+            created_by=self.prod_user,
+        )
+        PurchaseLine.objects.create(
+            purchase=purchase,
+            item=self.flour,
+            qty_in_purchase_unit=Decimal('60'),
+            purchase_unit=kg,
+            qty_in_stock_unit=Decimal('60'),
+            unit_cost_paise=4500,
+            line_total_paise=270000,
+        )
+        purchase.total_paise = 270000
+        purchase.save()
+        receive_stock(self.flour, Decimal('60'), 4500, 'purchase', str(purchase.pk), self.prod_user)
+
+        # Post Benchmark Production Run
+        self.run = ProductionRun.objects.create(
+            bom=self.bom,
+            batches=Decimal('1'),
+            run_date=date.today(),
+            actual_good_output=Decimal('188'),
+            damaged_pouches=Decimal('6'),
+            cartons_used=Decimal('9'),
+            created_by=self.prod_user,
+        )
+        RunIssue.objects.create(run=self.run, item=self.flour, issued_qty=Decimal('40'))
+        RunIssue.objects.create(run=self.run, item=self.oil, issued_qty=Decimal('10.5'))
+        RunIssue.objects.create(run=self.run, item=self.spice, issued_qty=Decimal('1.2'))
+        post_run(self.run, self.prod_user)
+
+    def test_costing_benchmark_and_overheads(self):
+        # 1. Verify FIFO material cost is 401000 paise
+        self.assertEqual(self.run.material_cost_paise, 401000)
+
+        # 2. Add overheads via POST on run_result:
+        # Pre-fill suggestion "Labour": 1200 rupees (120000 paise)
+        self.client.login(username='admin1', password='demo1234')
+        resp1 = self.client.post(reverse('run_result', kwargs={'pk': self.run.pk}), {
+            'description': 'Labour',
+            'amount': '1200',
+        }, follow=True)
+        self.assertEqual(resp1.status_code, 200)
+
+        # Pre-fill suggestion "Gas / power": 600 rupees (60000 paise)
+        resp2 = self.client.post(reverse('run_result', kwargs={'pk': self.run.pk}), {
+            'description': 'Gas / power',
+            'amount': '600',
+        }, follow=True)
+        self.assertEqual(resp2.status_code, 200)
+
+        # Verify RunOverhead rows
+        self.assertEqual(self.run.overheads.count(), 2)
+        overhead_total = sum(o.amount_paise for o in self.run.overheads.all())
+        self.assertEqual(overhead_total, 180000)
+
+        # Total cost = 401000 + 180000 = 581000 paise
+        self.assertEqual(self.run.total_cost_paise, 581000)
+
+        # Over 188 packets gives 3090 paise per packet (₹30.90)
+        self.assertEqual(self.run.cost_per_packet_paise, 3090)
+        self.assertEqual(self.run.cost_per_packet_rupees, '30.90')
+
+        # Margin 1910 paise (about 38%)
+        self.assertEqual(self.run.margin_paise, 1910)
+        self.assertEqual(self.run.margin_rupees, '19.10')
+        self.assertAlmostEqual(float(self.run.margin_percent), 38.2, delta=0.5)
+
+        # Check run_result page content
+        result_page = self.client.get(reverse('run_result', kwargs={'pk': self.run.pk}))
+        self.assertEqual(result_page.status_code, 200)
+        content = result_page.content.decode()
+        self.assertIn('30.90', content)
+        self.assertIn('3090', content)
+        self.assertIn('19.10', content)
+        self.assertIn('1910', content)
+        self.assertIn('38.2%', content)
+        self.assertIn('581000', content)
+        self.assertIn('401000', content)
+        self.assertIn('Labour', content)
+        self.assertIn('Gas / power', content)
+        self.assertIn('Overhead is allocated equally per good packet', content)
+        # Weighted-average material cost per packet shown next to it for comparison
+        self.assertIn('21.57', content)
+
+    def test_product_costing_page_access_control(self):
+        url = reverse('product_costing')
+
+        # Admin, owner and accountant can open it
+        for username in ['admin1', 'owner1', 'acct1']:
+            self.client.login(username=username, password='demo1234')
+            res = self.client.get(url)
+            self.assertEqual(res.status_code, 200, f"{username} should get 200 on {url}")
+            self.assertContains(res, 'Product Costing')
+            self.assertContains(res, 'Murukku 200 g')
+            self.client.logout()
+
+        # Others get 403 (salesman, production)
+        for username in ['salesman_a', 'prod1']:
+            self.client.login(username=username, password='demo1234')
+            res = self.client.get(url)
+            self.assertEqual(res.status_code, 403, f"{username} should get 403 on {url}")
+            self.client.logout()
+
+        # Anonymous gets 302 to login
+        res_anon = self.client.get(url)
+        self.assertEqual(res_anon.status_code, 302)
+
+    def test_product_costing_card_on_admin_and_owner_home(self):
+        # Admin home page has Product Costing card
+        self.client.login(username='admin1', password='demo1234')
+        admin_res = self.client.get(reverse('admin_home'))
+        self.assertEqual(admin_res.status_code, 200)
+        self.assertContains(admin_res, 'Product Costing')
+        self.assertContains(admin_res, reverse('product_costing'))
+
+        # Owner home page has Product Costing card
+        self.client.login(username='owner1', password='demo1234')
+        owner_res = self.client.get(reverse('owner_home'))
+        self.assertEqual(owner_res.status_code, 200)
+        self.assertContains(owner_res, reverse('product_costing'))

@@ -9,4 +9,6 @@ urlpatterns = [
     path('runs/new/', views.run_create, name='run_create'),
     path('runs/<int:pk>/', views.run_result, name='run_result'),
     path('runs/<int:pk>/detail/', views.run_result, name='run_detail'),
+    path('costing/', views.product_costing_list, name='product_costing'),
+    path('product-costing/', views.product_costing_list, name='product_costing_alt'),
 ]
