@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import urllib.parse
 
 
@@ -33,6 +33,60 @@ def format_inr(paise: int | float | Decimal | None) -> str:
         formatted_int = int_part
         
     return f"{'-' if is_neg else ''}₹{formatted_int}.{dec_part}"
+
+
+def format_inr_rupees(rupees: int | float | Decimal | str | None) -> str:
+    """
+    Format rupee amount with Indian digit grouping and currency symbol.
+    E.g. 7500.00 -> '₹7,500.00'
+         123456 -> '₹1,23,456.00'
+    """
+    if rupees is None or rupees == "":
+        return "₹0.00"
+    try:
+        r = Decimal(str(rupees))
+    except (InvalidOperation, TypeError, ValueError):
+        return f"₹{rupees}"
+    return format_inr(int((r * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP)))
+
+
+def format_qty(value: int | float | Decimal | str | None) -> str:
+    """
+    Format quantity with at most 3 decimals and no trailing zeros.
+    E.g. 120.000 -> '120'
+         19.500 -> '19.5'
+         3.800 -> '3.8'
+         0.000 -> '0'
+         1234.5678 -> '1234.568'
+    """
+    if value is None or value == "":
+        return ""
+    try:
+        d = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return str(value)
+
+    # Quantize to at most 3 decimal places
+    d = d.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+    # Format to fixed 3 decimals then strip trailing zeros and dot
+    formatted = f"{d:.3f}".rstrip("0").rstrip(".")
+    if formatted in ("", "-0", "-"):
+        return "0"
+    return formatted
+
+
+def abs_qty(value: int | float | Decimal | str | None) -> str:
+    """
+    Format absolute quantity with at most 3 decimals and no trailing zeros.
+    """
+    if value is None or value == "":
+        return ""
+    try:
+        d = abs(Decimal(str(value)))
+        return format_qty(d)
+    except Exception:
+        return format_qty(value)
 
 
 def _num_to_words(n: int) -> str:

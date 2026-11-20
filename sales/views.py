@@ -29,11 +29,13 @@ def salesman_home(request):
 
     total_value_paise = sum(order.total_paise for order in my_orders)
     total_value_rupees = f"{total_value_paise / 100:.2f}"
+    total_value_formatted = format_inr(total_value_paise)
 
     context = {
         'orders_count': orders_count,
         'recent_orders': recent_orders,
         'total_value_rupees': total_value_rupees,
+        'total_value_formatted': total_value_formatted,
     }
     return render(request, 'sales/salesman_home.html', context)
 
@@ -230,17 +232,39 @@ def order_detail(request, pk):
 @role_required('admin', 'owner')
 def admin_pending_orders(request):
     """
-    Pending orders list for admin & owner roles:
-    All orders with status 'submitted', showing customer, salesman, date, and total.
+    Incoming field orders list for admin & owner roles with tabs:
+    - 'Pending' (status submitted)
+    - 'Approved - Ready to Invoice' (status approved)
+    - 'Invoiced' (status invoiced)
     """
+    tab = request.GET.get('tab', 'pending').strip().lower()
+    if tab in ['approved', 'approved_ready_to_invoice', 'ready_to_invoice', 'approved-ready-to-invoice']:
+        current_tab = 'approved'
+        status_filter = Order.STATUS_APPROVED
+    elif tab in ['invoiced', 'invoice']:
+        current_tab = 'invoiced'
+        status_filter = Order.STATUS_INVOICED
+    else:
+        current_tab = 'pending'
+        status_filter = Order.STATUS_SUBMITTED
+
     orders = (
-        Order.objects.filter(status=Order.STATUS_SUBMITTED)
+        Order.objects.filter(status=status_filter)
         .select_related('customer', 'salesman')
         .prefetch_related('lines__item', 'lines__item__stock_unit')
         .order_by('-created_at')
     )
+
+    pending_count = Order.objects.filter(status=Order.STATUS_SUBMITTED).count()
+    approved_count = Order.objects.filter(status=Order.STATUS_APPROVED).count()
+    invoiced_count = Order.objects.filter(status=Order.STATUS_INVOICED).count()
+
     context = {
         'orders': orders,
+        'current_tab': current_tab,
+        'pending_count': pending_count,
+        'approved_count': approved_count,
+        'invoiced_count': invoiced_count,
     }
     return render(request, 'sales/admin_pending_orders.html', context)
 
@@ -270,6 +294,8 @@ def admin_order_detail(request, pk):
                 action = 'reject'
             elif 'edit' in request.POST or 'save' in request.POST:
                 action = 'edit'
+            elif 'create_invoice' in request.POST or request.POST.get('status') == 'create_invoice':
+                action = 'create_invoice'
 
         # 1. Parse and apply line edits (quantity & price)
         lines = list(order.lines.all())
@@ -314,6 +340,9 @@ def admin_order_detail(request, pk):
                     object_id=str(order.pk),
                     details={'changes': changes},
                 )
+
+            if action in ['create_invoice', 'create-invoice', 'invoice']:
+                return create_invoice_from_order(request, pk=order.pk)
 
             # 2. Handle Action (Approve / Reject / Edit)
             if action in ['approve', 'approved']:
