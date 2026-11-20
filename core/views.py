@@ -61,3 +61,20 @@ def admin_home(request):
 def owner_home(request):
     """Owner role home page."""
     return render(request, 'core/owner_home.html')
+
+
+@role_required('admin', 'owner')
+def benchmark_view(request):
+    """Benchmark verification view for admin and owner."""
+    from core.benchmark import run_benchmark
+    results = run_benchmark()
+    passed_count = sum(1 for r in results if r['passed'])
+    failed_count = len(results) - passed_count
+    all_passed = failed_count == 0
+    return render(request, 'core/benchmark.html', {
+        'results': results,
+        'all_passed': all_passed,
+        'passed_count': passed_count,
+        'failed_count': failed_count,
+        'total_count': len(results),
+    })
