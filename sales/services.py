@@ -268,6 +268,7 @@ def record_payment(
     reference: str,
     user,
     customer=None,
+    date: datetime.date | str | None = None,
 ) -> Payment:
     """
     Record payment against an invoice or customer.
@@ -277,11 +278,18 @@ def record_payment(
     elif customer is None:
         raise ValueError("Either invoice or customer must be provided.")
 
+    if date is None:
+        payment_date = datetime.date.today()
+    elif isinstance(date, str):
+        payment_date = datetime.date.fromisoformat(date)
+    else:
+        payment_date = date
+
     payment = Payment.objects.create(
         invoice=invoice,
         customer=customer,
         amount_paise=amount_paise,
-        date=datetime.date.today(),
+        date=payment_date,
         mode=mode or 'bank_transfer',
         reference=reference or '',
     )

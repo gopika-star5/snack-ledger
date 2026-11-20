@@ -741,3 +741,137 @@ class SalesInvoiceBillingTests(TestCase):
         self.assertContains(resp, "Insufficient stock")
         self.assertContains(resp, "bg-rose-50")
 
+    def test_record_payment_invoice_status_cancel_outstanding_and_permissions(self):
+        """
+        Tests: payment of 400000 paise on the 787500 paise invoice leaves outstanding 387500 and shows "part paid";
+        paying the balance shows "paid"; cancelling a dispatched invoice restores finished goods stock to 238
+        and keeps the invoice row; salesman_a gets 403 on the payment page.
+        """
+        # Create accountant client
+        acct_client = Client()
+        acct_client.login(username='acct1', password='demo1234')
+
+        # 1. salesman_a gets 403 on the payment page
+        resp_salesman = self.client_a.get(reverse('record_payment'))
+        self.assertEqual(resp_salesman.status_code, 403)
+        resp_salesman_post = self.client_a.post(reverse('record_payment'), {'customer': self.retailer_a.pk})
+        self.assertEqual(resp_salesman_post.status_code, 403)
+
+        # Accountant gets 403 on payment page
+        resp_acct_pay = acct_client.get(reverse('record_payment'))
+        self.assertEqual(resp_acct_pay.status_code, 403)
+
+        # Admin and owner get 200 on payment page
+        self.assertEqual(self.admin_client.get(reverse('record_payment')).status_code, 200)
+        self.assertEqual(self.owner_client.get(reverse('record_payment')).status_code, 200)
+
+        # Setup 238 packets stock: 50 opening + 188 production
+        receive_stock(
+            item=self.murukku,
+            qty=Decimal('188'),
+            unit_cost_paise=3000,
+            source_type='production',
+            source_id='run-p1',
+            user=self.admin_user,
+            batch_no='MUR-TEST-P1',
+            expiry_date=date.today() + timedelta(days=90),
+        )
+        self.assertEqual(get_balance(self.murukku), Decimal('238'))
+
+        # Order 150 packets for Retailer A
+        order = Order.objects.create(
+            client_uuid=uuid.uuid4(),
+            customer=self.retailer_a,
+            salesman=self.salesman_a,
+            status=Order.STATUS_APPROVED,
+        )
+        OrderLine.objects.create(
+            order=order,
+            item=self.murukku,
+            qty=Decimal('150'),
+            price_paise=5000,
+        )
+        invoice = create_invoice(order, user=self.admin_user)
+        self.assertEqual(invoice.total_paise, 787500)
+
+        # Dispatch invoice -> stock drops to 88
+        dispatch_invoice(invoice, user=self.admin_user)
+        self.assertEqual(get_balance(self.murukku), Decimal('88'))
+
+        # Initially invoice shows unpaid
+        inv_detail_resp = self.admin_client.get(reverse('invoice_detail', args=[invoice.pk]))
+        self.assertEqual(inv_detail_resp.status_code, 200)
+        self.assertContains(inv_detail_resp, "unpaid")
+
+        # Payment of 400000 paise on the 787500 paise invoice leaves outstanding 387500 and shows "part paid"
+        pay_resp = self.admin_client.post(reverse('record_payment'), {
+            'invoice': invoice.pk,
+            'customer': self.retailer_a.pk,
+            'amount_paise': 400000,
+            'date': date.today().isoformat(),
+            'mode': 'bank',
+            'reference': 'TXN400000',
+        }, follow=True)
+        self.assertEqual(pay_resp.status_code, 200)
+
+        self.assertEqual(customer_outstanding(self.retailer_a), 387500)
+
+        inv_detail_resp2 = self.admin_client.get(reverse('invoice_detail', args=[invoice.pk]))
+        self.assertContains(inv_detail_resp2, "part paid")
+        self.assertContains(inv_detail_resp2, "3,875")
+
+        # Verify audit log entry for payment
+        self.assertTrue(AuditLog.objects.filter(action='record_payment', object_id=str(invoice.payments.first().pk)).exists())
+
+        # Paying the balance shows "paid"
+        pay_bal_resp = self.admin_client.post(reverse('record_payment'), {
+            'invoice': invoice.pk,
+            'customer': self.retailer_a.pk,
+            'amount_paise': 387500,
+            'date': date.today().isoformat(),
+            'mode': 'upi',
+            'reference': 'UPI387500',
+        }, follow=True)
+        self.assertEqual(pay_bal_resp.status_code, 200)
+
+        self.assertEqual(customer_outstanding(self.retailer_a), 0)
+
+        inv_detail_resp3 = self.admin_client.get(reverse('invoice_detail', args=[invoice.pk]))
+        self.assertContains(inv_detail_resp3, "paid")
+
+        # Test Customer Outstanding page permissions and contents
+        # Salesman A gets 403 on outstanding page
+        self.assertEqual(self.client_a.get(reverse('customer_outstanding')).status_code, 403)
+        # Accountant gets 200 (read-only)
+        acct_out_resp = acct_client.get(reverse('customer_outstanding'))
+        self.assertEqual(acct_out_resp.status_code, 200)
+        # Check formatting like ₹3,875.00 or ₹7,875.00
+        self.assertContains(acct_out_resp, "₹7,875.00")
+        # Check ageing bucket headers
+        self.assertContains(acct_out_resp, "0-30 Days")
+        self.assertContains(acct_out_resp, "31-60 Days")
+        self.assertContains(acct_out_resp, "61-90 Days")
+        self.assertContains(acct_out_resp, "90+ Days")
+
+        # Cancelling a dispatched invoice restores finished goods stock to 238 and keeps the invoice row
+        cancel_resp = self.admin_client.post(reverse('invoice_cancel', args=[invoice.pk]), {
+            'reason': 'Quality dispute by customer',
+        }, follow=True)
+        self.assertEqual(cancel_resp.status_code, 200)
+
+        # Restores finished goods stock to 238
+        self.assertEqual(get_balance(self.murukku), Decimal('238'))
+
+        # Keeps invoice row with status cancelled
+        invoice.refresh_from_db()
+        self.assertTrue(Invoice.objects.filter(pk=invoice.pk).exists())
+        self.assertEqual(invoice.status, Invoice.STATUS_CANCELLED)
+
+        # Shows grey "Cancelled" badge and credit note number
+        inv_cancel_page = self.admin_client.get(reverse('invoice_detail', args=[invoice.pk]))
+        self.assertContains(inv_cancel_page, "Cancelled")
+        self.assertContains(inv_cancel_page, invoice.credit_notes.first().number)
+
+        # Verify audit log entry for cancellation
+        self.assertTrue(AuditLog.objects.filter(action='cancel_invoice', object_id=str(invoice.pk)).exists())
+

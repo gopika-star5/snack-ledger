@@ -1,0 +1,232 @@
+{% extends 'base.html' %}
+{% load sales_tags %}
+
+{% block title %}Record Payment{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6 pb-12">
+    <!-- Blue Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center space-x-2 text-xs text-blue-200 mb-2">
+                    <a href="{% url 'admin_home' %}" class="hover:text-white transition">Admin Home</a>
+                    <span>&bull;</span>
+                    <a href="{% url 'customer_outstanding' %}" class="hover:text-white transition">Receivables</a>
+                    <span>&bull;</span>
+                    <span class="text-white font-semibold">Record Payment</span>
+                </div>
+                <span class="bg-blue-900/60 text-blue-200 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+                    Collections & Receipts
+                </span>
+                <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Record Customer Payment</h1>
+                <p class="text-blue-100 text-sm mt-1">Receive payment against outstanding tax invoices or customer balances.</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
+                <span class="text-blue-200">Mode:</span>
+                <span class="font-bold text-white ml-1">💳 Admin / Owner Entry</span>
+            </div>
+        </div>
+    </div>
+
+    {% if errors %}
+    <div class="bg-rose-50 border border-rose-300 text-rose-800 p-4 rounded-xl text-sm space-y-1">
+        <strong class="font-bold block">Please correct the following:</strong>
+        <ul class="list-disc list-inside">
+            {% for err in errors %}
+            <li>{{ err }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'record_payment' %}" class="space-y-6">
+        {% csrf_token %}
+
+        <!-- Card 1: Customer Selection -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h2 class="text-base font-extrabold text-slate-800 flex items-center space-x-2">
+                    <span>1.</span>
+                    <span>Choose Customer</span>
+                </h2>
+                <span class="text-xs text-slate-400 font-medium">Step 1</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="customer_select" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Customer <span class="text-rose-500">*</span>
+                    </label>
+                    <select name="customer" id="customer_select"
+                            onchange="if(this.value){ window.location.href='?customer=' + this.value; }"
+                            class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+                        <option value="">-- Select a Customer --</option>
+                        {% for c in customers %}
+                        <option value="{{ c.pk }}" {% if selected_customer and selected_customer.pk == c.pk %}selected{% endif %}>
+                            {{ c.name }} ({{ c.get_customer_type_display }} &bull; {{ c.state }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-slate-400 mt-1">Selecting a customer will display their unpaid invoices below.</p>
+                </div>
+
+                {% if selected_customer %}
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600 space-y-1">
+                    <span class="font-bold text-slate-800 block text-sm">{{ selected_customer.name }}</span>
+                    <div>Type: <strong class="text-slate-700">{{ selected_customer.get_customer_type_display }}</strong> &bull; State: <strong class="text-slate-700">{{ selected_customer.state }}</strong></div>
+                    <div>GSTIN: <span class="font-mono font-bold text-indigo-700">{{ selected_customer.gstin|default:"Unregistered" }}</span></div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Card 2: Unpaid Invoices -->
+        {% if selected_customer %}
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h2 class="text-base font-extrabold text-slate-800 flex items-center space-x-2">
+                    <span>2.</span>
+                    <span>Unpaid Invoices for {{ selected_customer.name }}</span>
+                </h2>
+                <span class="text-xs text-slate-400 font-medium font-mono">{{ unpaid_invoices|length }} invoice(s)</span>
+            </div>
+
+            {% if unpaid_invoices %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                        <tr>
+                            <th class="py-2.5 px-3 font-bold text-center">Select</th>
+                            <th class="py-2.5 px-3 font-bold">Invoice Number</th>
+                            <th class="py-2.5 px-3 font-bold">Date</th>
+                            <th class="py-2.5 px-3 font-bold text-right">Total</th>
+                            <th class="py-2.5 px-3 font-bold text-right">Already Paid</th>
+                            <th class="py-2.5 px-3 font-bold text-right">Balance Due</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 font-mono text-xs">
+                        {% for inv in unpaid_invoices %}
+                        <tr class="hover:bg-blue-50/50 transition cursor-pointer" onclick="selectInvoiceRadio('inv_{{ inv.pk }}', '{{ inv.balance_paise }}')">
+                            <td class="py-2.5 px-3 text-center">
+                                <input type="radio" name="invoice" id="inv_{{ inv.pk }}" value="{{ inv.pk }}"
+                                       {% if selected_invoice and selected_invoice.pk == inv.pk %}checked{% endif %}
+                                       class="text-blue-600 focus:ring-blue-500 h-4 w-4">
+                            </td>
+                            <td class="py-2.5 px-3 font-bold text-blue-700">
+                                {{ inv.number }}
+                            </td>
+                            <td class="py-2.5 px-3 text-slate-600">
+                                {{ inv.date|date:"d M Y" }}
+                            </td>
+                            <td class="py-2.5 px-3 text-right text-slate-800">
+                                {{ inv.total_formatted }}
+                            </td>
+                            <td class="py-2.5 px-3 text-right text-emerald-700">
+                                {{ inv.paid_formatted }}
+                            </td>
+                            <td class="py-2.5 px-3 text-right font-bold text-slate-900 text-sm">
+                                {{ inv.balance_formatted }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pt-2 text-xs text-slate-500 flex items-center space-x-2">
+                <input type="radio" name="invoice" id="inv_none" value="" {% if not selected_invoice %}checked{% endif %} class="text-blue-600 focus:ring-blue-500 h-4 w-4">
+                <label for="inv_none" class="cursor-pointer font-medium text-slate-600">General payment / unallocated against customer account</label>
+            </div>
+            {% else %}
+            <div class="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500">
+                No unpaid invoices found for this customer. Payment will be credited to the customer account.
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Card 3: Payment Details -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h2 class="text-base font-extrabold text-slate-800 flex items-center space-x-2">
+                    <span>3.</span>
+                    <span>Payment Information</span>
+                </h2>
+                <span class="text-xs text-slate-400 font-medium">Details</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Amount -->
+                <div>
+                    <label for="amount" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Amount (₹ or Paise) <span class="text-rose-500">*</span>
+                    </label>
+                    <input type="text" name="amount" id="amount" required
+                           value="{% if selected_invoice %}{{ selected_invoice.balance_paise }}{% endif %}"
+                           placeholder="e.g. 400000 or 4000.00"
+                           class="w-full bg-slate-50 border border-slate-300 font-mono text-slate-900 text-sm rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+                    <p class="text-[11px] text-slate-400 mt-1">Accepts integer paise (e.g. 400000) or rupees with decimal (e.g. 4000.00).</p>
+                </div>
+
+                <!-- Date -->
+                <div>
+                    <label for="date" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Payment Date <span class="text-rose-500">*</span>
+                    </label>
+                    <input type="date" name="date" id="date" required
+                           value="{{ today_str }}"
+                           class="w-full bg-slate-50 border border-slate-300 font-mono text-slate-900 text-sm rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+                </div>
+
+                <!-- Mode -->
+                <div>
+                    <label for="mode" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Payment Mode <span class="text-rose-500">*</span>
+                    </label>
+                    <select name="mode" id="mode" required
+                            class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+                        <option value="bank" selected>Bank Transfer / NEFT / RTGS</option>
+                        <option value="upi">UPI</option>
+                        <option value="cash">Cash</option>
+                        <option value="cheque">Cheque</option>
+                    </select>
+                </div>
+
+                <!-- Reference -->
+                <div>
+                    <label for="reference" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Transaction / Reference No.
+                    </label>
+                    <input type="text" name="reference" id="reference"
+                           placeholder="e.g. UTR / Cheque No / UPI Ref"
+                           class="w-full bg-slate-50 border border-slate-300 font-mono text-slate-900 text-sm rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="pt-4 border-t border-slate-100 flex items-center justify-between">
+                <a href="{% url 'admin_home' %}" class="text-xs font-semibold text-slate-500 hover:text-slate-800 px-3 py-2 rounded-lg transition">
+                    ← Cancel & Back
+                </a>
+                <button type="submit"
+                        class="bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-extrabold text-sm py-2.5 px-6 rounded-xl shadow transition">
+                    Save Payment
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+function selectInvoiceRadio(radioId, balancePaise) {
+    const radio = document.getElementById(radioId);
+    if (radio) {
+        radio.checked = true;
+    }
+    const amountInput = document.getElementById('amount');
+    if (amountInput && balancePaise) {
+        amountInput.value = balancePaise;
+    }
+}
+</script>
+{% endblock %}

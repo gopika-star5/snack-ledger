@@ -1,3 +1,4 @@
+import datetime
 import re
 import uuid
 from decimal import Decimal
@@ -5,6 +6,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
+from django.db.models import Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -13,9 +15,9 @@ from weasyprint import HTML
 from core.decorators import role_required
 from core.ledger import InsufficientStock, get_balance
 from core.models import Customer, Item, AuditLog, CompanySettings
-from .models import Order, OrderLine, Invoice, InvoiceLine, Dispatch, CreditNote
-from .services import create_invoice, dispatch_invoice, cancel_invoice
-from .utils import format_inr, amount_to_words_inr, get_whatsapp_invoice_url
+from .models import Order, OrderLine, Invoice, InvoiceLine, Dispatch, CreditNote, Payment
+from .services import create_invoice, dispatch_invoice, cancel_invoice, record_payment, customer_outstanding
+from .utils import format_inr, amount_to_words_inr, get_whatsapp_invoice_url, calculate_customer_ageing
 
 
 @role_required('salesman')
@@ -604,7 +606,7 @@ def invoice_detail(request, pk):
     """
     invoice = get_object_or_404(
         Invoice.objects.select_related('customer', 'order')
-        .prefetch_related('lines__item', 'lines__item__stock_unit', 'dispatches', 'credit_notes'),
+        .prefetch_related('lines__item', 'lines__item__stock_unit', 'dispatches', 'credit_notes', 'payments'),
         pk=pk,
     )
 
@@ -711,3 +713,218 @@ def invoice_pdf(request, pk):
     clean_num = invoice.number.replace('/', '-')
     response['Content-Disposition'] = f'inline; filename="Invoice-{clean_num}.pdf"'
     return response
+
+
+# ---------------------------------------------------------------------------
+# Payment & Receivables Views (Role: admin, owner; accountant read-only for outstanding)
+# ---------------------------------------------------------------------------
+
+@role_required('admin', 'owner')
+def record_payment_view(request):
+    """
+    Record Payment page for admin and owner:
+    choose a customer, see their unpaid invoices, enter amount, date,
+    mode (cash/UPI/bank/cheque) and reference, then save with record_payment.
+    """
+    errors = []
+
+    if request.method == 'POST':
+        customer_id = request.POST.get('customer') or request.POST.get('customer_id')
+        invoice_id = request.POST.get('invoice') or request.POST.get('invoice_id')
+        amount_raw = request.POST.get('amount_paise') or request.POST.get('amount')
+        date_raw = request.POST.get('date')
+        mode = (request.POST.get('mode') or 'bank_transfer').strip()
+        reference = (request.POST.get('reference') or '').strip()
+
+        customer = None
+        invoice = None
+
+        if invoice_id and str(invoice_id).strip():
+            try:
+                invoice = Invoice.objects.get(pk=invoice_id)
+                customer = invoice.customer
+            except Invoice.DoesNotExist:
+                errors.append("Selected invoice does not exist.")
+        elif customer_id and str(customer_id).strip():
+            try:
+                customer = Customer.objects.get(pk=customer_id)
+            except Customer.DoesNotExist:
+                errors.append("Selected customer does not exist.")
+        else:
+            errors.append("Please select a customer.")
+
+        amount_paise = None
+        if not amount_raw or str(amount_raw).strip() == '':
+            errors.append("Please enter an amount.")
+        else:
+            val_clean = str(amount_raw).strip().replace('₹', '').replace(',', '')
+            try:
+                if '.' in val_clean:
+                    amount_paise = int((Decimal(val_clean) * Decimal('100')).quantize(Decimal('1')))
+                else:
+                    amount_paise = int(val_clean)
+                if amount_paise <= 0:
+                    errors.append("Payment amount must be greater than zero.")
+            except Exception:
+                errors.append("Invalid payment amount entered.")
+
+        pay_date = datetime.date.today()
+        if date_raw and str(date_raw).strip():
+            try:
+                pay_date = datetime.date.fromisoformat(str(date_raw).strip())
+            except Exception:
+                pay_date = datetime.date.today()
+
+        if not errors and (invoice or customer) and amount_paise:
+            payment = record_payment(
+                invoice=invoice,
+                amount_paise=amount_paise,
+                mode=mode,
+                reference=reference,
+                user=request.user,
+                customer=customer,
+                date=pay_date,
+            )
+            messages.success(request, f"Payment of {payment.amount_rupees} recorded successfully.")
+            if invoice:
+                return redirect('invoice_detail', pk=invoice.pk)
+            return redirect('customer_outstanding')
+
+    # GET handling / Fallback on errors
+    customer_id = (
+        request.GET.get('customer')
+        or request.GET.get('customer_id')
+        or request.POST.get('customer')
+        or request.POST.get('customer_id')
+    )
+    invoice_id = (
+        request.GET.get('invoice')
+        or request.GET.get('invoice_id')
+        or request.POST.get('invoice')
+        or request.POST.get('invoice_id')
+    )
+
+    selected_customer = None
+    selected_invoice = None
+
+    if invoice_id:
+        try:
+            selected_invoice = Invoice.objects.get(pk=invoice_id)
+            selected_customer = selected_invoice.customer
+        except (Invoice.DoesNotExist, ValueError):
+            pass
+
+    if not selected_customer and customer_id:
+        try:
+            selected_customer = Customer.objects.get(pk=customer_id)
+        except (Customer.DoesNotExist, ValueError):
+            pass
+
+    unpaid_invoices = []
+    if selected_customer:
+        candidate_invoices = (
+            selected_customer.invoices.exclude(status=Invoice.STATUS_CANCELLED)
+            .prefetch_related('payments')
+            .order_by('date', 'id')
+        )
+        for inv in candidate_invoices:
+            if inv.balance_paise > 0:
+                unpaid_invoices.append(inv)
+
+    customers = Customer.objects.all().order_by('name')
+    today_str = datetime.date.today().isoformat()
+
+    context = {
+        'customers': customers,
+        'selected_customer': selected_customer,
+        'selected_invoice': selected_invoice,
+        'unpaid_invoices': unpaid_invoices,
+        'today_str': today_str,
+        'errors': errors,
+    }
+    return render(request, 'sales/record_payment.html', context)
+
+
+@role_required('admin', 'owner', 'accountant')
+def customer_outstanding_list(request):
+    """
+    Customer Outstanding page: each customer with total invoiced, total paid,
+    credit notes and outstanding, plus ageing buckets 0-30, 31-60, 61-90, 90+ days.
+    Show amounts as rupees like ₹3,875.00.
+    Accountant can view read-only; admin and owner can also record payments.
+    """
+    today = datetime.date.today()
+    customers = Customer.objects.all().order_by('name')
+
+    rows = []
+    grand_totals = {
+        'invoiced': 0,
+        'paid': 0,
+        'credit_notes': 0,
+        'outstanding': 0,
+        'bucket_0_30': 0,
+        'bucket_31_60': 0,
+        'bucket_61_90': 0,
+        'bucket_90_plus': 0,
+    }
+
+    for c in customers:
+        invoiced_paise = Invoice.objects.filter(customer=c).aggregate(total=Sum('total_paise'))['total'] or 0
+        paid_paise = Payment.objects.filter(customer=c).aggregate(total=Sum('amount_paise'))['total'] or 0
+        cn_paise = CreditNote.objects.filter(invoice__customer=c).aggregate(total=Sum('total_paise'))['total'] or 0
+        outstanding_paise = customer_outstanding(c)
+        ageing = calculate_customer_ageing(c, today=today)
+
+        grand_totals['invoiced'] += invoiced_paise
+        grand_totals['paid'] += paid_paise
+        grand_totals['credit_notes'] += cn_paise
+        grand_totals['outstanding'] += outstanding_paise
+        grand_totals['bucket_0_30'] += ageing['bucket_0_30']
+        grand_totals['bucket_31_60'] += ageing['bucket_31_60']
+        grand_totals['bucket_61_90'] += ageing['bucket_61_90']
+        grand_totals['bucket_90_plus'] += ageing['bucket_90_plus']
+
+        rows.append({
+            'customer': c,
+            'invoiced_paise': invoiced_paise,
+            'invoiced_formatted': format_inr(invoiced_paise),
+            'paid_paise': paid_paise,
+            'paid_formatted': format_inr(paid_paise),
+            'credit_notes_paise': cn_paise,
+            'credit_notes_formatted': format_inr(cn_paise),
+            'outstanding_paise': outstanding_paise,
+            'outstanding_formatted': format_inr(outstanding_paise),
+            'bucket_0_30': ageing['bucket_0_30'],
+            'bucket_0_30_formatted': ageing['bucket_0_30_formatted'],
+            'bucket_31_60': ageing['bucket_31_60'],
+            'bucket_31_60_formatted': ageing['bucket_31_60_formatted'],
+            'bucket_61_90': ageing['bucket_61_90'],
+            'bucket_61_90_formatted': ageing['bucket_61_90_formatted'],
+            'bucket_90_plus': ageing['bucket_90_plus'],
+            'bucket_90_plus_formatted': ageing['bucket_90_plus_formatted'],
+        })
+
+    is_accountant = (
+        request.user.groups.filter(name='accountant').exists()
+        and not (request.user.is_superuser or request.user.groups.filter(name__in=['admin', 'owner']).exists())
+    )
+
+    grand_totals_formatted = {
+        'invoiced': format_inr(grand_totals['invoiced']),
+        'paid': format_inr(grand_totals['paid']),
+        'credit_notes': format_inr(grand_totals['credit_notes']),
+        'outstanding': format_inr(grand_totals['outstanding']),
+        'bucket_0_30': format_inr(grand_totals['bucket_0_30']),
+        'bucket_31_60': format_inr(grand_totals['bucket_31_60']),
+        'bucket_61_90': format_inr(grand_totals['bucket_61_90']),
+        'bucket_90_plus': format_inr(grand_totals['bucket_90_plus']),
+    }
+
+    context = {
+        'rows': rows,
+        'grand_totals': grand_totals,
+        'grand_totals_formatted': grand_totals_formatted,
+        'is_accountant': is_accountant,
+        'today': today,
+    }
+    return render(request, 'sales/customer_outstanding.html', context)

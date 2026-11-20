@@ -21,4 +21,12 @@ urlpatterns = [
     path('invoices/<int:pk>/pdf/', views.invoice_pdf, name='invoice_pdf'),
     path('invoices/<int:pk>/dispatch/', views.invoice_dispatch, name='invoice_dispatch'),
     path('invoices/<int:pk>/cancel/', views.invoice_cancel, name='invoice_cancel'),
+
+    # Payment & Receivables routes
+    path('payments/record/', views.record_payment_view, name='record_payment'),
+    path('payments/new/', views.record_payment_view, name='payment_create'),
+    path('admin/payments/record/', views.record_payment_view, name='admin_record_payment'),
+    path('outstanding/', views.customer_outstanding_list, name='customer_outstanding'),
+    path('customers/outstanding/', views.customer_outstanding_list, name='outstanding_list'),
+    path('admin/outstanding/', views.customer_outstanding_list, name='admin_customer_outstanding'),
 ]

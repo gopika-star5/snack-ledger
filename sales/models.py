@@ -170,9 +170,45 @@ class Invoice(models.Model):
         return format_inr(self.total_paise)
 
     @property
-    def total_formatted(self) -> str:
+    def paid_paise(self) -> int:
+        from django.db.models import Sum
+        return int(self.payments.aggregate(total=Sum('amount_paise'))['total'] or 0)
+
+    @property
+    def paid_rupees(self) -> str:
+        return f"{self.paid_paise / 100:.2f}"
+
+    @property
+    def paid_formatted(self) -> str:
         from sales.utils import format_inr
-        return format_inr(self.total_paise)
+        return format_inr(self.paid_paise)
+
+    @property
+    def balance_paise(self) -> int:
+        if self.status == self.STATUS_CANCELLED:
+            return 0
+        return max(0, self.total_paise - self.paid_paise)
+
+    @property
+    def balance_rupees(self) -> str:
+        return f"{self.balance_paise / 100:.2f}"
+
+    @property
+    def balance_formatted(self) -> str:
+        from sales.utils import format_inr
+        return format_inr(self.balance_paise)
+
+    @property
+    def payment_status(self) -> str:
+        if self.status == self.STATUS_CANCELLED:
+            return 'cancelled'
+        paid = self.paid_paise
+        if paid <= 0:
+            return 'unpaid'
+        elif paid < self.total_paise:
+            return 'part paid'
+        else:
+            return 'paid'
 
     @property
     def taxable_formatted(self) -> str:
