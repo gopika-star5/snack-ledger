@@ -20,31 +20,79 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- Quick Access Hub Banner -->
+    <div class="bg-white p-6 rounded-2xl border border-purple-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 bg-gradient-to-r from-purple-50 to-indigo-50">
+        <div>
+            <h2 class="text-lg font-bold text-purple-900">Reports Center Hub</h2>
+            <p class="text-slate-600 text-xs mt-1">Access all financial statements, registers, and tax reports with CSV & Excel exports.</p>
+        </div>
+        <a href="{% url 'reports_index' %}" class="bg-purple-700 hover:bg-purple-800 text-white font-semibold px-5 py-2.5 rounded-xl text-xs md:text-sm shadow-md transition whitespace-nowrap">
+            View All Reports &rarr;
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition flex flex-col justify-between">
+            <div>
+                <div class="text-2xl mb-2">📋</div>
+                <h2 class="font-bold text-slate-800 text-base mb-1">Sales Register</h2>
+                <p class="text-slate-600 text-xs mb-4">Invoice list with taxable amount, CGST, SGST, IGST, and status.</p>
+            </div>
+            <a href="{% url 'sales_register' %}" class="block text-center w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg text-xs transition">
+                Sales Register
+            </a>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition flex flex-col justify-between">
+            <div>
+                <div class="text-2xl mb-2">📑</div>
+                <h2 class="font-bold text-slate-800 text-base mb-1">GST Summary</h2>
+                <p class="text-slate-600 text-xs mb-4">GSTR-1 outward supplies by tax rate, split by registered & unregistered.</p>
+            </div>
+            <a href="{% url 'gst_summary' %}" class="block text-center w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg text-xs transition">
+                GST Summary
+            </a>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition flex flex-col justify-between">
+            <div>
+                <div class="text-2xl mb-2">📊</div>
+                <h2 class="font-bold text-slate-800 text-base mb-1">Sales Analytics</h2>
+                <p class="text-slate-600 text-xs mb-4">Customer-wise and product-wise sales summaries with quantity & tax.</p>
+            </div>
+            <a href="{% url 'sales_summary' %}" class="block text-center w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg text-xs transition">
+                Sales Summary
+            </a>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition flex flex-col justify-between">
+            <div>
+                <div class="text-2xl mb-2">🛒</div>
+                <h2 class="font-bold text-slate-800 text-base mb-1">Purchase Register</h2>
+                <p class="text-slate-600 text-xs mb-4">Itemized procurement records with supplier details and expenditure.</p>
+            </div>
+            <a href="{% url 'purchase_register' %}" class="block text-center w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg text-xs transition">
+                Purchase Register
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
-            <div class="text-2xl mb-2">📑</div>
-            <h2 class="font-bold text-slate-800 text-base mb-1">Sales Register & GST</h2>
-            <p class="text-slate-600 text-xs mb-4">Export monthly outward supplies, tax breakdown (CGST/SGST/IGST), and invoice registers.</p>
-            <button class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg text-xs transition">
-                GST Reports
-            </button>
+            <div class="text-2xl mb-2">💰</div>
+            <h2 class="font-bold text-slate-800 text-base mb-1">Receivables & Ageing</h2>
+            <p class="text-slate-600 text-xs mb-4">Customer outstanding balances, collection reconciliations, and debt ageing analysis.</p>
+            <a href="{% url 'customer_outstanding' %}" class="inline-block bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg text-xs transition">
+                Receivables & Ageing
+            </a>
         </div>
 
         <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
             <div class="text-2xl mb-2">📜</div>
             <h2 class="font-bold text-slate-800 text-base mb-1">Stock Ledger Summary</h2>
             <p class="text-slate-600 text-xs mb-4">Complete movement-based stock ledger for raw materials, packaging, and finished goods.</p>
-            <button class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-xs transition">
-                Stock Ledger
-            </button>
-        </div>
-
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
-            <div class="text-2xl mb-2">💰</div>
-            <h2 class="font-bold text-slate-800 text-base mb-1">Receivables & Ageing</h2>
-            <p class="text-slate-600 text-xs mb-4">Customer outstanding balances, collection reconciliations, and debt ageing analysis.</p>
-            <a href="{% url 'customer_outstanding' %}" class="block text-center w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg text-xs transition">
-                Receivables
+            <a href="{% url 'reports_index' %}" class="inline-block bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg text-xs transition">
+                Reports Hub
             </a>
         </div>
     </div>

@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% load reports_tags %}
+
+{% block title %}Sales Summary (Customer & Product){% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Blue Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <a href="{% url 'reports_index' %}" class="inline-flex items-center text-blue-200 hover:text-white text-xs font-semibold uppercase tracking-wider mb-2 transition">
+                    &larr; Back to Reports Center
+                </a>
+                <h1 class="text-2xl md:text-3xl font-extrabold">Sales Summary</h1>
+                <p class="text-blue-100 text-sm mt-1">Consolidated outward supplies broken down by customer accounts and product lines.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}&export=csv" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📥</span>
+                    <span>Download CSV</span>
+                </a>
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}&export=excel" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📊</span>
+                    <span>Download Excel</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Date Range Filter Card -->
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <form method="get" class="flex flex-wrap items-end gap-4">
+            <div>
+                <label for="from_date" class="block text-xs font-semibold text-slate-600 mb-1">From Date</label>
+                <input type="date" id="from_date" name="from_date" value="{{ from_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="to_date" class="block text-xs font-semibold text-slate-600 mb-1">To Date</label>
+                <input type="date" id="to_date" name="to_date" value="{{ to_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg text-sm transition shadow-sm">
+                    Filter
+                </button>
+                {% if from_date or to_date %}
+                <a href="{% url 'sales_summary' %}" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-lg text-sm transition">
+                    Clear
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Section 1: Customer-wise Sales Summary -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <span>🏢</span> Customer-wise Sales Summary
+            </h2>
+            <span class="text-xs text-slate-500 font-medium">{{ customer_summaries|length }} Customers</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                    <tr>
+                        <th class="px-4 py-3">Customer</th>
+                        <th class="px-4 py-3">GSTIN</th>
+                        <th class="px-4 py-3">State</th>
+                        <th class="px-4 py-3 text-center">Invoices</th>
+                        <th class="px-4 py-3 text-right">Taxable</th>
+                        <th class="px-4 py-3 text-right">Total Tax</th>
+                        <th class="px-4 py-3 text-right font-bold text-slate-900">Total Sales</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for c in customer_summaries %}
+                    <tr class="hover:bg-blue-50/50 transition">
+                        <td class="px-4 py-3 font-semibold text-slate-800">
+                            {{ c.customer.name }}
+                            <span class="text-xs text-slate-500 font-normal block">{{ c.customer.get_customer_type_display }}</span>
+                        </td>
+                        <td class="px-4 py-3 font-mono text-xs text-slate-600">{{ c.customer.gstin|default:"Unregistered" }}</td>
+                        <td class="px-4 py-3 text-slate-600">{{ c.customer.state }}</td>
+                        <td class="px-4 py-3 text-center font-mono">{{ c.invoices_count }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ c.taxable_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ c.total_tax_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-bold text-slate-900">{{ c.total_paise|format_inr }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-4 py-8 text-center text-slate-400">
+                            No customer sales recorded for this period.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if customer_summaries %}
+                <tfoot class="bg-slate-100 font-bold border-t-2 border-slate-200 text-slate-800">
+                    <tr>
+                        <td colspan="3" class="px-4 py-3">Total</td>
+                        <td class="px-4 py-3 text-center font-mono">{{ customer_totals.invoices_count }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ customer_totals.taxable_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ customer_totals.total_tax_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-extrabold text-blue-900">{{ customer_totals.total_paise|format_inr }}</td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <!-- Section 2: Product-wise Sales Summary -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                <span>📦</span> Product-wise Sales Summary
+            </h2>
+            <span class="text-xs text-slate-500 font-medium">{{ product_summaries|length }} Products</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                    <tr>
+                        <th class="px-4 py-3">Product Name</th>
+                        <th class="px-4 py-3">HSN</th>
+                        <th class="px-4 py-3 text-right">Quantity Sold</th>
+                        <th class="px-4 py-3">Unit</th>
+                        <th class="px-4 py-3 text-right">Taxable</th>
+                        <th class="px-4 py-3 text-right">Tax</th>
+                        <th class="px-4 py-3 text-right font-bold text-slate-900">Total Value</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for p in product_summaries %}
+                    <tr class="hover:bg-blue-50/50 transition">
+                        <td class="px-4 py-3 font-semibold text-slate-800">
+                            {{ p.item.name }}
+                            <span class="text-xs text-slate-500 font-normal block">{{ p.item.get_item_type_display }}</span>
+                        </td>
+                        <td class="px-4 py-3 font-mono text-xs text-slate-600">{{ p.item.hsn_code|default:"—" }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-medium text-slate-800">{{ p.qty }}</td>
+                        <td class="px-4 py-3 text-slate-500">{{ p.item.stock_unit.code }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ p.taxable_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ p.total_tax_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-bold text-slate-900">{{ p.total_paise|format_inr }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-4 py-8 text-center text-slate-400">
+                            No product sales recorded for this period.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if product_summaries %}
+                <tfoot class="bg-slate-100 font-bold border-t-2 border-slate-200 text-slate-800">
+                    <tr>
+                        <td colspan="2" class="px-4 py-3">Total</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ product_totals.qty }}</td>
+                        <td></td>
+                        <td class="px-4 py-3 text-right font-mono">{{ product_totals.taxable_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ product_totals.total_tax_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-extrabold text-blue-900">{{ product_totals.total_paise|format_inr }}</td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

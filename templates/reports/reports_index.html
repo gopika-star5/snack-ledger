@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Reports & Audit Center{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <span class="bg-blue-900/60 text-blue-200 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">
+                    Financials & Compliance
+                </span>
+                <h1 class="text-2xl md:text-3xl font-extrabold mt-2">Reports & Audit Center</h1>
+                <p class="text-blue-100 text-sm mt-1">Exportable sales registers, customer & product analytics, GSTR-1 summaries, and purchase registers.</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-xs md:text-sm border border-white/20">
+                <span class="text-blue-200">Standards:</span>
+                <span class="font-bold text-white ml-1">📑 GSTR-1 &bull; 📊 Excel &bull; 📥 CSV</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reports Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {% for r in reports %}
+        <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition flex flex-col justify-between">
+            <div>
+                <div class="text-3xl mb-3">{{ r.icon }}</div>
+                <h2 class="text-lg font-bold text-slate-800 mb-2">{{ r.title }}</h2>
+                <p class="text-slate-600 text-sm mb-6">{{ r.description }}</p>
+            </div>
+            <div class="pt-4 border-t border-slate-100 flex items-center justify-between">
+                <a href="{% url r.url_name %}" class="inline-flex items-center text-sm font-semibold text-blue-600 hover:text-blue-800 transition">
+                    Open Report &rarr;
+                </a>
+                <div class="flex items-center space-x-2 text-xs text-slate-400">
+                    <span>Date Filter</span> &bull; <span>CSV & Excel</span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

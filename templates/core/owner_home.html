@@ -46,7 +46,7 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <h2 class="font-bold text-slate-800 text-base mb-2">Cost & Profitability</h2>
             <p class="text-slate-600 text-xs mb-4">View real-time cost-per-packet breakdown factoring ingredient costs, labour, power, and packing.</p>
@@ -61,6 +61,14 @@
             <button class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg text-xs transition">
                 Review Alerts
             </button>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h2 class="font-bold text-slate-800 text-base mb-2">Audit & Financial Reports</h2>
+            <p class="text-slate-600 text-xs mb-4">Access sales register, GST outward summaries, customer/product analytics, and purchase ledger.</p>
+            <a href="{% url 'reports_index' %}" class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
+                View Reports
+            </a>
         </div>
     </div>
 </div>

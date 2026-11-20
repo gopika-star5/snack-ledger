@@ -1,0 +1,212 @@
+{% extends 'base.html' %}
+{% load reports_tags %}
+
+{% block title %}GST Summary of Outward Supplies (GSTR-1){% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Blue Header Banner -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <a href="{% url 'reports_index' %}" class="inline-flex items-center text-blue-200 hover:text-white text-xs font-semibold uppercase tracking-wider mb-2 transition">
+                    &larr; Back to Reports Center
+                </a>
+                <h1 class="text-2xl md:text-3xl font-extrabold">GST Summary (Outward Supplies)</h1>
+                <p class="text-blue-100 text-sm mt-1">GSTR-1 compliant tax liability summary split by registered (B2B) and unregistered (B2C) buyers.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}&export=csv" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📥</span>
+                    <span>Download CSV</span>
+                </a>
+                <a href="?from_date={{ from_date|default:'' }}&to_date={{ to_date|default:'' }}&export=excel" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-md transition flex items-center gap-1.5">
+                    <span>📊</span>
+                    <span>Download Excel</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Date Range Filter Card -->
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <form method="get" class="flex flex-wrap items-end gap-4">
+            <div>
+                <label for="from_date" class="block text-xs font-semibold text-slate-600 mb-1">From Date</label>
+                <input type="date" id="from_date" name="from_date" value="{{ from_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="to_date" class="block text-xs font-semibold text-slate-600 mb-1">To Date</label>
+                <input type="date" id="to_date" name="to_date" value="{{ to_date|default:'' }}"
+                       class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg text-sm transition shadow-sm">
+                    Filter
+                </button>
+                {% if from_date or to_date %}
+                <a href="{% url 'gst_summary' %}" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-lg text-sm transition">
+                    Clear
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Section 1: Supplies to Registered Persons (With GSTIN / B2B) -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <div>
+                <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                    <span>🏛️</span> 1. Outward Supplies to Registered Persons (With GSTIN / B2B)
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">Taxable supplies made to registered customers holding a valid GSTIN.</p>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                    <tr>
+                        <th class="px-4 py-3">GST Rate</th>
+                        <th class="px-4 py-3 text-right">Taxable Value</th>
+                        <th class="px-4 py-3 text-right">CGST</th>
+                        <th class="px-4 py-3 text-right">SGST</th>
+                        <th class="px-4 py-3 text-right">IGST</th>
+                        <th class="px-4 py-3 text-right">Total Tax</th>
+                        <th class="px-4 py-3 text-right font-bold text-slate-900">Total Value</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for r in b2b_rows %}
+                    <tr class="hover:bg-blue-50/50 transition">
+                        <td class="px-4 py-3 font-semibold text-slate-800">{{ r.rate_display }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ r.taxable_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-medium text-slate-700">{{ r.cgst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-medium text-slate-700">{{ r.sgst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ r.igst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ r.total_tax_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-bold text-slate-900">{{ r.total_paise|format_inr }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-4 py-8 text-center text-slate-400">
+                            No registered (B2B) supplies in the selected period.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if b2b_rows %}
+                <tfoot class="bg-slate-100 font-bold border-t-2 border-slate-200 text-slate-800">
+                    <tr>
+                        <td class="px-4 py-3">Subtotal (With GSTIN)</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2b_totals.taxable_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2b_totals.cgst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2b_totals.sgst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2b_totals.igst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2b_totals.total_tax_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-extrabold text-blue-900">{{ b2b_totals.total_paise|format_inr }}</td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <!-- Section 2: Supplies to Unregistered Persons (Without GSTIN / B2C) -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <div>
+                <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                    <span>🛍️</span> 2. Outward Supplies to Unregistered Persons (Without GSTIN / B2C)
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">Taxable supplies made to consumers or unregistered retailers.</p>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                    <tr>
+                        <th class="px-4 py-3">GST Rate</th>
+                        <th class="px-4 py-3 text-right">Taxable Value</th>
+                        <th class="px-4 py-3 text-right">CGST</th>
+                        <th class="px-4 py-3 text-right">SGST</th>
+                        <th class="px-4 py-3 text-right">IGST</th>
+                        <th class="px-4 py-3 text-right">Total Tax</th>
+                        <th class="px-4 py-3 text-right font-bold text-slate-900">Total Value</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for r in b2c_rows %}
+                    <tr class="hover:bg-blue-50/50 transition">
+                        <td class="px-4 py-3 font-semibold text-slate-800">{{ r.rate_display }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ r.taxable_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-medium text-slate-700">{{ r.cgst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-medium text-slate-700">{{ r.sgst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ r.igst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-slate-600">{{ r.total_tax_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-bold text-slate-900">{{ r.total_paise|format_inr }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-4 py-8 text-center text-slate-400">
+                            No unregistered (B2C) supplies in the selected period.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if b2c_rows %}
+                <tfoot class="bg-slate-100 font-bold border-t-2 border-slate-200 text-slate-800">
+                    <tr>
+                        <td class="px-4 py-3">Subtotal (Without GSTIN)</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2c_totals.taxable_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2c_totals.cgst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2c_totals.sgst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2c_totals.igst_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ b2c_totals.total_tax_paise|format_inr }}</td>
+                        <td class="px-4 py-3 text-right font-mono font-extrabold text-blue-900">{{ b2c_totals.total_paise|format_inr }}</td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <!-- Section 3: Consolidated Grand Total Card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-4 bg-slate-100 border-b border-slate-200 flex justify-between items-center">
+            <h2 class="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                <span>📊</span> Consolidated Total Outward Supplies (GSTR-1 Table 4 & 5)
+            </h2>
+        </div>
+        <div class="p-5">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-center">
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <span class="text-xs text-slate-500 font-semibold uppercase block">Taxable</span>
+                    <span class="text-base font-bold text-slate-800 mt-1 block font-mono">{{ grand_totals.taxable_paise|format_inr }}</span>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <span class="text-xs text-slate-500 font-semibold uppercase block">CGST</span>
+                    <span class="text-base font-bold text-slate-800 mt-1 block font-mono">{{ grand_totals.cgst_paise|format_inr }}</span>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <span class="text-xs text-slate-500 font-semibold uppercase block">SGST</span>
+                    <span class="text-base font-bold text-slate-800 mt-1 block font-mono">{{ grand_totals.sgst_paise|format_inr }}</span>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <span class="text-xs text-slate-500 font-semibold uppercase block">IGST</span>
+                    <span class="text-base font-bold text-slate-800 mt-1 block font-mono">{{ grand_totals.igst_paise|format_inr }}</span>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <span class="text-xs text-slate-500 font-semibold uppercase block">Total Tax</span>
+                    <span class="text-base font-bold text-indigo-700 mt-1 block font-mono">{{ grand_totals.total_tax_paise|format_inr }}</span>
+                </div>
+                <div class="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                    <span class="text-xs text-blue-700 font-semibold uppercase block">Grand Total</span>
+                    <span class="text-base font-extrabold text-blue-900 mt-1 block font-mono">{{ grand_totals.total_paise|format_inr }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
