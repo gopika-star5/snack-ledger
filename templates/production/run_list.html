@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load sales_tags %}
 {% block title %}Production Runs{% endblock %}
 
 {% block content %}
@@ -32,7 +33,7 @@
               <th class="px-4 py-3 text-right">Batches</th>
               <th class="px-4 py-3 text-right">Good Output</th>
               <th class="px-4 py-3 text-right">Yield Var %</th>
-              <th class="px-4 py-3 text-right">Cost (paise)</th>
+              <th class="px-4 py-3 text-right">Cost</th>
               <th class="px-4 py-3 text-center">Status</th>
               <th class="px-4 py-3 text-right">Action</th>
             </tr>
@@ -53,7 +54,7 @@
                   {% endif %}
                 </td>
                 <td class="px-4 py-3 text-right font-mono text-slate-600 text-xs">
-                  {{ r.material_cost_paise }}
+                  {{ r.material_cost_paise|format_inr }}
                 </td>
                 <td class="px-4 py-3 text-center">
                   <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800 border border-emerald-200{% else %}bg-amber-100 text-amber-800 border border-amber-200{% endif %}">

@@ -22,6 +22,11 @@ class Purchase(models.Model):
     def __str__(self):
         return f"Purchase #{self.pk} from {self.supplier} on {self.date}"
 
+    @property
+    def total_formatted(self):
+        from sales.utils import format_inr
+        return format_inr(self.total_paise)
+
 
 class PurchaseLine(models.Model):
     purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name='lines')
@@ -34,6 +39,16 @@ class PurchaseLine(models.Model):
 
     def __str__(self):
         return f"Line {self.pk}: {self.item} {self.qty_in_purchase_unit} -> {self.qty_in_stock_unit}"
+
+    @property
+    def line_total_formatted(self):
+        from sales.utils import format_inr
+        return format_inr(self.line_total_paise)
+
+    @property
+    def unit_cost_formatted(self):
+        from sales.utils import format_inr
+        return format_inr(self.unit_cost_paise)
 
 
 class BOM(models.Model):

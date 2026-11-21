@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load sales_tags %}
 
 {% block title %}Invoice {{ invoice.number }}{% endblock %}
 
@@ -240,7 +241,7 @@
                         <td class="py-2.5 px-3 text-slate-700">{{ p.date|date:"d M Y" }}</td>
                         <td class="py-2.5 px-3 text-slate-600 font-sans uppercase text-[11px] font-bold">{{ p.mode }}</td>
                         <td class="py-2.5 px-3 text-slate-500">{{ p.reference|default:"-" }}</td>
-                        <td class="py-2.5 px-3 text-right font-bold text-emerald-700">{{ p.amount_rupees }} (paise: {{ p.amount_paise }})</td>
+                        <td class="py-2.5 px-3 text-right font-bold text-emerald-700">{{ p.amount_paise|format_inr }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

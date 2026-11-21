@@ -159,7 +159,7 @@
                 <!-- Amount -->
                 <div>
                     <label for="amount" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                        Amount (₹ or Paise) <span class="text-rose-500">*</span>
+                        Amount (₹) <span class="text-rose-500">*</span>
                     </label>
                     <input type="text" name="amount" id="amount" required
                            value="{% if selected_invoice %}{{ selected_invoice.balance_paise }}{% endif %}"

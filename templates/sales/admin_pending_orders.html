@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load sales_tags %}
 
 {% block title %}Incoming Field Orders{% endblock %}
 
@@ -129,7 +130,7 @@
                 <div class="flex items-baseline space-x-2">
                     <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Total:</span>
                     <span class="text-xl md:text-2xl font-black text-slate-900 font-mono">₹{{ order.total_rupees }}</span>
-                    <span class="text-xs text-slate-400 font-mono">({{ order.total_paise }} paise)</span>
+                    <span class="text-xs text-slate-400 font-mono">({{ order.total_paise|format_inr }})</span>
                 </div>
                 <a href="{% url 'admin_order_detail' order.pk %}"
                    class="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold py-2.5 px-5 rounded-xl text-xs md:text-sm shadow-md transition">

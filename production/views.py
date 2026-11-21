@@ -44,10 +44,30 @@ class PurchaseLineForm(forms.Form):
     item = forms.ModelChoiceField(queryset=Item.objects.all(), required=False)
     qty = forms.DecimalField(max_digits=14, decimal_places=3, required=False)
     purchase_unit = forms.ModelChoiceField(queryset=Unit.objects.all(), required=False)
-    rate_paise = forms.IntegerField(
+    rate = forms.DecimalField(
+        max_digits=14,
+        decimal_places=2,
         required=False,
-        help_text="Rate per purchase unit in paise",
+        label="Rate (₹ per unit)",
+        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'placeholder': '0.00'}),
     )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        rate = cleaned_data.get('rate')
+        # Support fallback if rate_paise was passed directly in form data
+        if rate is None:
+            raw_rate_paise = self.data.get(self.add_prefix('rate_paise'))
+            if raw_rate_paise is not None and str(raw_rate_paise).strip() != '':
+                try:
+                    rate_paise_val = Decimal(str(raw_rate_paise))
+                    rate = (rate_paise_val / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    cleaned_data['rate'] = rate
+                except Exception:
+                    pass
+        if rate is not None:
+            cleaned_data['rate_paise'] = int((Decimal(str(rate)) * Decimal('100')).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        return cleaned_data
 
     def is_filled(self):
         """Return True if at least item and qty are provided."""
@@ -89,14 +109,17 @@ def purchase_create(request):
                 item = line_form.cleaned_data['item']
                 qty = line_form.cleaned_data['qty']
                 purchase_unit = line_form.cleaned_data.get('purchase_unit')
-                rate_paise = line_form.cleaned_data.get('rate_paise')
+                rate = line_form.cleaned_data.get('rate')
 
                 if not purchase_unit:
                     errors.append(f"Line {i + 1}: purchase unit is required.")
                     continue
-                if not rate_paise:
+                if rate is None:
                     errors.append(f"Line {i + 1}: rate is required.")
                     continue
+
+                # Convert rate in rupees to integer paise using Decimal with round half up
+                rate_paise = int((Decimal(str(rate)) * Decimal('100')).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
                 # Convert qty to stock unit
                 try:
@@ -108,8 +131,8 @@ def purchase_create(request):
                 # Convert rate from per-purchase-unit to per-stock-unit
                 factor_from = Decimal(str(purchase_unit.factor_to_base))
                 factor_to = Decimal(str(item.stock_unit.factor_to_base))
-                unit_cost_stock = int(Decimal(rate_paise) * factor_from / factor_to)
-                line_total = int(qty_stock * unit_cost_stock)
+                unit_cost_stock = int((Decimal(rate_paise) * factor_from / factor_to).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+                line_total = int((qty_stock * Decimal(unit_cost_stock)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
                 valid_lines.append({
                     'item': item,
                     'qty_in_purchase_unit': qty,

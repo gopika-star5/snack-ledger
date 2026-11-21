@@ -54,13 +54,13 @@
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
       <div class="text-xs text-slate-400 font-medium">Material Cost</div>
       <div class="text-xl font-bold text-slate-800 font-mono mt-1">₹{{ material_cost_rupees }}</div>
-      <div class="text-[11px] text-slate-500 mt-0.5">{{ material_cost_paise }} paise</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">{{ material_cost_paise|format_inr }}</div>
     </div>
 
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
       <div class="text-xs text-slate-400 font-medium">Cost / Packet</div>
       <div class="text-xl font-bold text-indigo-700 font-mono mt-1">₹{{ cost_per_packet_rupees }}</div>
-      <div class="text-[11px] text-slate-500 mt-0.5">{{ cost_per_packet_paise }} paise</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">{{ cost_per_packet_paise|format_inr }}</div>
     </div>
   </div>
 
@@ -90,21 +90,21 @@
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
           <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Material Cost (FIFO)</span>
           <div class="text-xl font-black text-slate-800 font-mono mt-1">{{ material_cost_formatted }}</div>
-          <span class="text-[11px] text-slate-500 font-mono mt-0.5 block">{{ material_cost_paise }} paise</span>
+          <span class="text-[11px] text-slate-500 font-mono mt-0.5 block">{{ material_cost_paise|format_inr }}</span>
         </div>
 
         <!-- Overheads -->
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
           <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Overheads</span>
           <div class="text-xl font-black text-slate-800 font-mono mt-1">{{ overhead_cost_formatted }}</div>
-          <span class="text-[11px] text-slate-500 font-mono mt-0.5 block">{{ overhead_cost_paise }} paise</span>
+          <span class="text-[11px] text-slate-500 font-mono mt-0.5 block">{{ overhead_cost_paise|format_inr }}</span>
         </div>
 
         <!-- Total Cost -->
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
           <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Total Run Cost</span>
           <div class="text-xl font-black text-indigo-950 font-mono mt-1">{{ total_cost_formatted }}</div>
-          <span class="text-[11px] text-slate-500 font-mono mt-0.5 block">{{ total_cost_paise }} paise</span>
+          <span class="text-[11px] text-slate-500 font-mono mt-0.5 block">{{ total_cost_paise|format_inr }}</span>
         </div>
 
         <!-- Good Packets -->
@@ -124,7 +124,7 @@
             {{ cost_per_packet_formatted }}
           </div>
           <p class="text-xs text-slate-500 font-mono">
-            {{ cost_per_packet_paise }} paise &bull; FIFO material + overhead
+            {{ cost_per_packet_paise|format_inr }} &bull; FIFO material + overhead
           </p>
         </div>
 
@@ -135,7 +135,7 @@
             {{ wa_material_cost_per_pkt_formatted }}
           </div>
           <p class="text-xs text-slate-500 font-mono">
-            {{ wa_material_cost_per_pkt_paise }} paise / pkt (Total WA: {{ wa_total_cost_per_pkt_formatted }})
+            {{ wa_material_cost_per_pkt_paise|format_inr }} / pkt (Total WA: {{ wa_total_cost_per_pkt_formatted }})
           </p>
         </div>
 
@@ -151,7 +151,7 @@
             </span>
           </div>
           <p class="text-xs text-slate-500 font-mono">
-            {{ margin_paise }} paise margin &bull; SP {{ selling_price_formatted }}
+            {{ margin_paise|format_inr }} margin &bull; SP {{ selling_price_formatted }}
           </p>
         </div>
       </div>
@@ -179,7 +179,7 @@
           <tr>
             <th class="py-2.5 px-3">Description</th>
             <th class="py-2.5 px-3 text-right">Amount (₹)</th>
-            <th class="py-2.5 px-3 text-right">Amount (Paise)</th>
+            <th class="py-2.5 px-3 text-right">Amount</th>
             <th class="py-2.5 px-3 text-center">Action</th>
           </tr>
         </thead>
@@ -188,7 +188,7 @@
           <tr class="hover:bg-slate-50">
             <td class="py-2.5 px-3 font-sans font-bold text-slate-800">{{ o.description }}</td>
             <td class="py-2.5 px-3 text-right font-bold text-slate-900">{{ o.amount_paise|format_inr }}</td>
-            <td class="py-2.5 px-3 text-right text-slate-500">{{ o.amount_paise }}</td>
+            <td class="py-2.5 px-3 text-right text-slate-500">{{ o.amount_paise|format_inr }}</td>
             <td class="py-2.5 px-3 text-center font-sans">
               <form method="post" action="{% url 'run_result' run.pk %}" class="inline">
                 {% csrf_token %}
@@ -206,7 +206,7 @@
           <tr>
             <td class="py-2.5 px-3 font-sans uppercase">Total Overheads</td>
             <td class="py-2.5 px-3 text-right text-slate-900">{{ overhead_cost_formatted }}</td>
-            <td class="py-2.5 px-3 text-right text-slate-600">{{ overhead_cost_paise }} paise</td>
+            <td class="py-2.5 px-3 text-right text-slate-600">{{ overhead_cost_paise|format_inr }}</td>
             <td></td>
           </tr>
         </tfoot>
